@@ -14,7 +14,214 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      ai_generations: {
+        Row: {
+          created_at: string
+          generated_content: string
+          generation_cost: number | null
+          id: string
+          model_used: string
+          product_id: string | null
+          prompt_input: Json
+          prompt_type: string
+        }
+        Insert: {
+          created_at?: string
+          generated_content: string
+          generation_cost?: number | null
+          id?: string
+          model_used: string
+          product_id?: string | null
+          prompt_input: Json
+          prompt_type: string
+        }
+        Update: {
+          created_at?: string
+          generated_content?: string
+          generation_cost?: number | null
+          id?: string
+          model_used?: string
+          product_id?: string | null
+          prompt_input?: Json
+          prompt_type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_generations_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      import_batches: {
+        Row: {
+          completed_at: string | null
+          created_at: string
+          csv_data: Json
+          failed_items: number
+          id: string
+          name: string
+          processed_items: number
+          status: string
+          successful_items: number
+          total_items: number
+          updated_at: string
+        }
+        Insert: {
+          completed_at?: string | null
+          created_at?: string
+          csv_data: Json
+          failed_items?: number
+          id?: string
+          name: string
+          processed_items?: number
+          status?: string
+          successful_items?: number
+          total_items?: number
+          updated_at?: string
+        }
+        Update: {
+          completed_at?: string | null
+          created_at?: string
+          csv_data?: Json
+          failed_items?: number
+          id?: string
+          name?: string
+          processed_items?: number
+          status?: string
+          successful_items?: number
+          total_items?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      processing_logs: {
+        Row: {
+          batch_id: string | null
+          created_at: string
+          error_message: string | null
+          id: string
+          operation_type: string
+          product_id: string | null
+          retry_count: number | null
+          status: string
+        }
+        Insert: {
+          batch_id?: string | null
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          operation_type: string
+          product_id?: string | null
+          retry_count?: number | null
+          status: string
+        }
+        Update: {
+          batch_id?: string | null
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          operation_type?: string
+          product_id?: string | null
+          retry_count?: number | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "processing_logs_batch_id_fkey"
+            columns: ["batch_id"]
+            isOneToOne: false
+            referencedRelation: "import_batches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "processing_logs_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      products: {
+        Row: {
+          ai_content_status: string | null
+          autodoc_url: string | null
+          batch_id: string | null
+          brand: string
+          category: string | null
+          created_at: string
+          dimensions: string | null
+          id: string
+          images: Json | null
+          long_description: string | null
+          oem_numbers: Json | null
+          price: number | null
+          product_name: string | null
+          raw_scraped_data: Json | null
+          scraping_status: string | null
+          short_description: string | null
+          sku: string
+          technical_specs: Json | null
+          updated_at: string
+          weight: string | null
+        }
+        Insert: {
+          ai_content_status?: string | null
+          autodoc_url?: string | null
+          batch_id?: string | null
+          brand: string
+          category?: string | null
+          created_at?: string
+          dimensions?: string | null
+          id?: string
+          images?: Json | null
+          long_description?: string | null
+          oem_numbers?: Json | null
+          price?: number | null
+          product_name?: string | null
+          raw_scraped_data?: Json | null
+          scraping_status?: string | null
+          short_description?: string | null
+          sku: string
+          technical_specs?: Json | null
+          updated_at?: string
+          weight?: string | null
+        }
+        Update: {
+          ai_content_status?: string | null
+          autodoc_url?: string | null
+          batch_id?: string | null
+          brand?: string
+          category?: string | null
+          created_at?: string
+          dimensions?: string | null
+          id?: string
+          images?: Json | null
+          long_description?: string | null
+          oem_numbers?: Json | null
+          price?: number | null
+          product_name?: string | null
+          raw_scraped_data?: Json | null
+          scraping_status?: string | null
+          short_description?: string | null
+          sku?: string
+          technical_specs?: Json | null
+          updated_at?: string
+          weight?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "products_batch_id_fkey"
+            columns: ["batch_id"]
+            isOneToOne: false
+            referencedRelation: "import_batches"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
