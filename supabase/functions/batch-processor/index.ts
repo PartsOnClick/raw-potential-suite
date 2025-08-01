@@ -17,7 +17,8 @@ serve(async (req) => {
   }
 
   try {
-    const { batchId } = await req.json();
+    const requestBody = await req.json();
+    const { batchId } = requestBody;
     
     console.log(`Starting batch processing for batch ${batchId}`);
     
@@ -179,8 +180,15 @@ serve(async (req) => {
   } catch (error) {
     console.error('Batch processing error:', error);
 
-    // Mark batch as failed
-    const { batchId } = await req.json().catch(() => ({}));
+    // Mark batch as failed - get batchId from original request
+    let batchId;
+    try {
+      const body = await req.clone().json();
+      batchId = body.batchId;
+    } catch {
+      // If we can't parse the request, we can't get the batchId
+    }
+    
     if (batchId) {
       await supabase
         .from('import_batches')
