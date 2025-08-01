@@ -91,10 +91,25 @@ serve(async (req) => {
 
     // Update product with generated content
     const updateData: Record<string, any> = {
-      [`${contentType}`]: generatedContent,
       ai_content_status: 'generated',
       updated_at: new Date().toISOString(),
     };
+    
+    // Map content types to correct column names
+    if (contentType === 'title') {
+      updateData.product_name = generatedContent; // Use product_name instead of title
+    } else if (contentType === 'short_description') {
+      updateData.short_description = generatedContent;
+    } else if (contentType === 'long_description') {
+      updateData.long_description = generatedContent;
+    } else if (contentType === 'meta_description') {
+      // Note: meta_description column doesn't exist in products table
+      // We could add it to technical_specs instead
+      updateData.technical_specs = {
+        ...productData.technical_specs,
+        meta_description: generatedContent
+      };
+    }
 
     const { error: updateError } = await supabase
       .from('products')
