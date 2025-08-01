@@ -161,70 +161,63 @@ serve(async (req) => {
 });
 
 function createTitlePrompt(productData: any): string {
-  return `Create an SEO-optimized product title for this automotive part:
-
+  return `Generate a concise, SEO-optimized product title for this auto part:
 Brand: ${productData.brand}
 SKU: ${productData.sku}
 Category: ${productData.category || 'Auto Part'}
-Current Name: ${productData.product_name || 'N/A'}
+Price: £${productData.price || 'N/A'}
 OEM Numbers: ${productData.oem_numbers?.join(', ') || 'N/A'}
 Technical Specs: ${JSON.stringify(productData.technical_specs || {})}
 
 Requirements:
-- Include brand and SKU
-- 60-80 characters maximum
-- Include main keywords for SEO
-- Mention compatibility if known
-- Professional and clear
+- Maximum 60 characters
+- Include brand, SKU only
+- Professional format: "Brand SKU - Part Type"
+- No extra descriptions or marketing text
 
-Format: Brand SKU - Part Type - Key Feature/Compatibility`;
+Return only the clean title, no explanations or formatting.`;
 }
 
 function createShortDescriptionPrompt(productData: any): string {
-  return `Write a compelling short product description (150-160 characters) for this automotive part:
-
+  return `Create a concise product description for this auto part:
 Brand: ${productData.brand}
 SKU: ${productData.sku}
 Category: ${productData.category || 'Auto Part'}
-Product Name: ${productData.product_name || 'N/A'}
-Key Specs: ${JSON.stringify(productData.technical_specs || {})}
-Price: ${productData.price ? '£' + productData.price : 'N/A'}
+Price: £${productData.price || 'N/A'}
+OEM Numbers: ${productData.oem_numbers?.join(', ') || 'N/A'}
+Technical Specs: ${JSON.stringify(productData.technical_specs || {})}
+Product Name: ${productData.product_name || ''}
 
 Requirements:
-- 150-160 characters maximum
-- Highlight key benefits
-- Include main keywords
-- Persuasive and informative
-- No technical jargon`;
+- Maximum 155 characters
+- Focus on key benefits and compatibility
+- Professional tone
+- No extra formatting or quotes
+
+Return only the description text, no explanations.`;
 }
 
 function createLongDescriptionPrompt(productData: any): string {
-  return `Write a comprehensive, SEO-optimized product description for this automotive part:
-
+  return `Write a professional product description for this auto part:
 Brand: ${productData.brand}
 SKU: ${productData.sku}
 Category: ${productData.category || 'Auto Part'}
-Product Name: ${productData.product_name || 'N/A'}
-Technical Specifications: ${JSON.stringify(productData.technical_specs || {})}
+Price: £${productData.price || 'N/A'}
 OEM Numbers: ${productData.oem_numbers?.join(', ') || 'N/A'}
-Images Available: ${productData.images?.length || 0}
+Technical Specs: ${JSON.stringify(productData.technical_specs || {})}
+Product Name: ${productData.product_name || ''}
+Short Description: ${productData.short_description || ''}
 
 Requirements:
-- 400-600 words
-- Include H2/H3 headings for structure
-- Technical specifications section
-- Installation/compatibility information
-- Benefits and features
-- SEO keywords naturally integrated
-- Professional tone
-- Include OEM numbers if available
+- 200-300 words
+- Professional, informative tone
+- Include technical specifications in bullet points
+- Mention OEM numbers for compatibility
+- Focus on quality and fitment
+- Use clean HTML formatting
+- No marketing fluff
 
-Structure:
-1. Overview paragraph
-2. Key Features & Benefits
-3. Technical Specifications  
-4. Compatibility Information
-5. Quality & Warranty`;
+Return only the HTML description, no explanations.`;
 }
 
 function createMetaDescriptionPrompt(productData: any): string {

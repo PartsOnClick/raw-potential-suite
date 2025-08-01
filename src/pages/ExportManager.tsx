@@ -44,7 +44,10 @@ const ExportManager = () => {
           
           return {
             ...batch,
-            products: products || []
+            products: products || [],
+            successfulItems: products?.filter(p => 
+              p.scraping_status === "scraped" && p.ai_content_status === "generated"
+            ).length || 0
           };
         })
       );
@@ -311,7 +314,7 @@ const ExportManager = () => {
                     <div className="flex items-start justify-between mb-2">
                       <div>
                         <h4 className="font-medium">{batch.name}</h4>
-                        <p className="text-sm text-muted-foreground">{formatDate(batch.createdAt)}</p>
+                        <p className="text-sm text-muted-foreground">{formatDate(batch.created_at)}</p>
                       </div>
                       <Badge variant="secondary">
                         <CheckCircle className="w-3 h-3 mr-1" />

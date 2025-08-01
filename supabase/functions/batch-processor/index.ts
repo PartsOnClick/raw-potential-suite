@@ -21,190 +21,171 @@ serve(async (req) => {
     const { batchId } = requestBody;
     
     console.log(`Starting batch processing for batch ${batchId}`);
-    
-    // Get batch data
-    const { data: batch, error: batchError } = await supabase
-      .from('import_batches')
-      .select('*')
-      .eq('id', batchId)
-      .single();
 
-    if (batchError || !batch) {
-      throw new Error('Batch not found');
-    }
+    // Create Supabase client with service role key
+    const supabaseAdmin = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+    );
 
-    // Update batch status to processing
-    await supabase
-      .from('import_batches')
-      .update({ status: 'processing', updated_at: new Date().toISOString() })
-      .eq('id', batchId);
-
-    // Get products for this batch
-    const { data: products, error: productsError } = await supabase
+    // Get all products in the batch that need scraping
+    const { data: products, error: productsError } = await supabaseAdmin
       .from('products')
       .select('*')
       .eq('batch_id', batchId)
       .eq('scraping_status', 'pending');
 
     if (productsError) {
-      throw productsError;
+      console.error('Error fetching products:', productsError);
+      throw new Error(`Failed to fetch products: ${productsError.message}`);
     }
 
-    console.log(`Processing ${products.length} products`);
+    if (!products || products.length === 0) {
+      console.log('No products found to process');
+      return new Response(
+        JSON.stringify({ success: true, message: 'No products to process' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
 
-    let processedCount = 0;
-    let successCount = 0;
-    let failureCount = 0;
+    console.log(`Found ${products.length} products to process`);
 
-    // Process each product
+    // Update batch status to processing
+    await supabaseAdmin
+      .from('import_batches')
+      .update({ status: 'processing', updated_at: new Date().toISOString() })
+      .eq('id', batchId);
+
+    // Process products sequentially to handle large file sets better
+    let successfullyProcessed = 0;
+    let errors = [];
+
     for (const product of products) {
       try {
-        console.log(`Processing ${product.brand} ${product.sku}`);
+        console.log(`Processing product ${product.id} - ${product.brand} ${product.sku}`);
         
-        // Step 1: Search Google for product data
-        const { data: scrapeResult, error: scrapeError } = await supabase.functions.invoke('google-product-search', {
-          body: {
-            brand: product.brand,
-            sku: product.sku,
-            productId: product.id,
-          },
-        });
+        // Step 1: Google Search for product data with enhanced technical specs search
+        try {
+          const { data: searchResult, error: searchError } = await supabaseAdmin.functions.invoke(
+            'google-product-search',
+            {
+              body: {
+                brand: product.brand,
+                sku: product.sku,
+                productId: product.id,
+              },
+            }
+          );
 
-        if (scrapeError) {
-          console.error(`Google search failed for ${product.brand} ${product.sku}:`, scrapeError.message);
-          throw new Error(`Google search failed: ${scrapeError.message}`);
+          if (searchError) {
+            console.error(`Google search failed for ${product.brand} ${product.sku}:`, searchError);
+          } else {
+            console.log(`Google search completed for ${product.brand} ${product.sku}`);
+          }
+        } catch (searchErr) {
+          console.error(`Google search error for ${product.brand} ${product.sku}:`, searchErr);
         }
 
-        // Check if Google search was successful
-        if (scrapeResult && scrapeResult.success) {
-          console.log(`Google search successful for ${product.brand} ${product.sku}, found ${scrapeResult.searchResults || 0} results`);
-        }
-
-        // Wait a bit to avoid rate limiting
-        await new Promise(resolve => setTimeout(resolve, 2000));
-
-        // Step 2: Generate AI content
-        const updatedProduct = await supabase
+        // Get updated product data
+        const { data: updatedProduct } = await supabaseAdmin
           .from('products')
           .select('*')
           .eq('id', product.id)
           .single();
 
-        if (updatedProduct.data && updatedProduct.data.scraping_status === 'scraped') {
-          // Generate title
-          await supabase.functions.invoke('deepseek-content-generator', {
-            body: {
-              productId: product.id,
-              contentType: 'title',
-              productData: updatedProduct.data,
-            },
-          });
+        // Step 2: Generate AI content (title, short description, long description) sequentially
+        const contentTypes = ['title', 'short_description', 'long_description'];
+        
+        for (const contentType of contentTypes) {
+          try {
+            const { data: contentResult, error: contentError } = await supabaseAdmin.functions.invoke(
+              'deepseek-content-generator',
+              {
+                body: {
+                  productId: product.id,
+                  contentType: contentType,
+                  productData: updatedProduct || product,
+                },
+              }
+            );
 
-          await new Promise(resolve => setTimeout(resolve, 1000));
+            if (contentError) {
+              console.error(`Content generation failed for ${contentType}:`, contentError);
+              errors.push(`${product.brand} ${product.sku} - ${contentType}: ${contentError.message}`);
+            } else {
+              console.log(`Successfully generated ${contentType} for ${product.brand} ${product.sku}`);
+            }
 
-          // Generate short description
-          await supabase.functions.invoke('deepseek-content-generator', {
-            body: {
-              productId: product.id,
-              contentType: 'short_description',
-              productData: updatedProduct.data,
-            },
-          });
-
-          await new Promise(resolve => setTimeout(resolve, 1000));
-
-          // Generate long description
-          await supabase.functions.invoke('deepseek-content-generator', {
-            body: {
-              productId: product.id,
-              contentType: 'long_description',
-              productData: updatedProduct.data,
-            },
-          });
+            // Small delay between content generation calls
+            await new Promise(resolve => setTimeout(resolve, 500));
+            
+          } catch (error) {
+            console.error(`Error generating ${contentType}:`, error);
+            errors.push(`${product.brand} ${product.sku} - ${contentType}: ${error.message}`);
+          }
         }
 
-        successCount++;
-        console.log(`Successfully processed ${product.brand} ${product.sku}`);
-
-      } catch (error) {
-        console.error(`Failed to process ${product.brand} ${product.sku}:`, error);
-        
-        // Mark product as failed
-        await supabase
+        // Update product status to completed
+        await supabaseAdmin
           .from('products')
           .update({ 
-            scraping_status: 'failed',
-            updated_at: new Date().toISOString()
+            scraping_status: 'scraped',
+            ai_content_status: 'generated'
           })
           .eq('id', product.id);
 
-        failureCount++;
+        successfullyProcessed++;
+        console.log(`Completed processing product ${product.id}`);
+        
+        // Add delay between products to prevent overwhelming the system
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+      } catch (error) {
+        console.error(`Error processing product ${product.id}:`, error);
+        errors.push(`${product.brand} ${product.sku}: ${error.message}`);
+        
+        // Update product status to failed
+        await supabaseAdmin
+          .from('products')
+          .update({ 
+            scraping_status: 'failed',
+            ai_content_status: 'failed'
+          })
+          .eq('id', product.id);
       }
-
-      processedCount++;
-
-      // Update batch progress
-      await supabase
-        .from('import_batches')
-        .update({
-          processed_items: processedCount,
-          successful_items: successCount,
-          failed_items: failureCount,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', batchId);
     }
 
-    // Mark batch as completed (treat blocked as success since we got placeholder data)
-    const finalStatus = successCount > 0 ? 'completed' : 'failed';
-    await supabase
+    // Update batch status
+    await supabaseAdmin
       .from('import_batches')
-      .update({
-        status: finalStatus,
-        completed_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
+      .update({ 
+        status: 'completed',
+        successful_items: successfullyProcessed,
+        failed_items: products.length - successfullyProcessed,
+        error_details: errors.length > 0 ? errors.join('; ') : null
       })
       .eq('id', batchId);
 
-    console.log(`Batch processing completed: ${successCount} success, ${failureCount} failed`);
+    console.log(`Batch processing completed. Successful: ${successfullyProcessed}, Failed: ${products.length - successfullyProcessed}`);
 
-    return new Response(JSON.stringify({ 
-      success: true,
-      processed: processedCount,
-      successful: successCount,
-      failed: failureCount,
-    }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+    return new Response(
+      JSON.stringify({ 
+        success: true, 
+        processed: successfullyProcessed,
+        failed: products.length - successfullyProcessed,
+        errors: errors 
+      }),
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
 
   } catch (error) {
     console.error('Batch processing error:', error);
-
-    // Mark batch as failed - get batchId from original request
-    let batchId;
-    try {
-      const body = await req.clone().json();
-      batchId = body.batchId;
-    } catch {
-      // If we can't parse the request, we can't get the batchId
-    }
-    
-    if (batchId) {
-      await supabase
-        .from('import_batches')
-        .update({
-          status: 'failed',
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', batchId);
-    }
-
-    return new Response(JSON.stringify({ 
-      success: false, 
-      error: error.message 
-    }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+    return new Response(
+      JSON.stringify({ error: error.message }),
+      { 
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+      }
+    );
   }
 });

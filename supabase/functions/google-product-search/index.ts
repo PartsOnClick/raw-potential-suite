@@ -31,46 +31,87 @@ serve(async (req) => {
       throw new Error('Google API Key or Search Engine ID not configured');
     }
     
-    // Search Google for the product
-    const searchQuery = `"${brand}" "${sku}" auto parts specifications`;
-    const googleSearchUrl = `https://www.googleapis.com/customsearch/v1?key=${googleApiKey}&cx=${googleSearchEngineId}&q=${encodeURIComponent(searchQuery)}&num=5`;
+    // Enhanced search queries for better technical specifications
+    const queries = [
+      `"${brand}" "${sku}" auto parts specifications`,
+      `"${brand}" "${sku}" "Packaging length [cm]"`,
+      `"${brand}" "${sku}" "Packaging width [cm]"`,
+      `"${brand}" "${sku}" "Packaging height [cm]"`,
+      `"${brand}" "${sku}" "EAN number"`,
+      `"${brand}" "${sku}" "fitting position"`
+    ];
     
-    console.log(`Searching Google for: ${searchQuery}`);
+    let allResults: any[] = [];
+    let extractedData: any = null;
     
-    const searchResponse = await fetch(googleSearchUrl);
-    
-    if (!searchResponse.ok) {
-      throw new Error(`Google Search API error: ${searchResponse.status} - ${searchResponse.statusText}`);
+    // Search with multiple queries to get comprehensive data
+    for (const query of queries) {
+      console.log(`Searching Google for: ${query}`);
+      
+      const searchUrl = `https://www.googleapis.com/customsearch/v1?key=${googleApiKey}&cx=${googleSearchEngineId}&q=${encodeURIComponent(query)}&num=3`;
+      
+      try {
+        const response = await fetch(searchUrl);
+        
+        if (!response.ok) {
+          console.warn(`Search API error for query "${query}": ${response.status}`);
+          continue;
+        }
+        
+        const data = await response.json();
+        
+        if (data.items && data.items.length > 0) {
+          allResults.push(...data.items);
+        }
+        
+        // Add delay between API calls to respect rate limits
+        await new Promise(resolve => setTimeout(resolve, 200));
+      } catch (searchError) {
+        console.error(`Search error for query "${query}":`, searchError);
+      }
     }
     
-    const searchData = await searchResponse.json();
-    
-    if (!searchData.items || searchData.items.length === 0) {
+    if (allResults.length === 0) {
       console.log(`No search results found for ${brand} ${sku}`);
       throw new Error('No search results found');
     }
     
-    // Extract product data from search results
-    const extractedData = extractDataFromSearchResults(searchData, brand, sku);
+    // Remove duplicates and create consolidated search data
+    const uniqueResults = allResults.filter((item, index, self) => 
+      index === self.findIndex((t) => t.link === item.link)
+    ).slice(0, 8);
+    
+    const consolidatedSearchData = {
+      items: uniqueResults
+    };
+
+    // Extract product data from all search results
+    extractedData = extractDataFromSearchResults(consolidatedSearchData, brand, sku);
 
     // Update product in database
+    const updateData: any = {
+      product_name: extractedData.productName,
+      category: extractedData.category,
+      images: extractedData.images,
+      technical_specs: extractedData.technicalSpecs,
+      oem_numbers: extractedData.oemNumbers,
+      price: extractedData.price,
+      scraping_status: 'scraped',
+      raw_scraped_data: {
+        searchResults: consolidatedSearchData,
+        extractedData: extractedData
+      },
+      updated_at: new Date().toISOString(),
+    };
+
+    // Add EAN number to separate field if found
+    if (extractedData.technicalSpecs?.EAN) {
+      updateData.ean_number = extractedData.technicalSpecs.EAN;
+    }
+
     const { error: updateError } = await supabase
       .from('products')
-      .update({
-        product_name: extractedData.productName,
-        category: extractedData.category,
-        images: extractedData.images,
-        technical_specs: extractedData.technicalSpecs,
-        oem_numbers: extractedData.oemNumbers,
-        price: extractedData.price,
-        autodoc_url: null, // No longer using Autodoc
-        scraping_status: 'scraped',
-        raw_scraped_data: {
-          searchResults: searchData,
-          extractedData: extractedData
-        },
-        updated_at: new Date().toISOString(),
-      })
+      .update(updateData)
       .eq('id', productId);
 
     if (updateError) {
@@ -89,7 +130,7 @@ serve(async (req) => {
     return new Response(JSON.stringify({ 
       success: true, 
       data: extractedData,
-      searchResults: searchData.items.length
+      searchResults: uniqueResults.length
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
