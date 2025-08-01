@@ -146,20 +146,33 @@ const ExportManager = () => {
     ];
 
     const rows = selectedProductData.map(product => {
-      // Extract dimensions from technical_specs if available
+      // Extract data from technical_specs and raw_scraped_data
       const specs = product.technical_specs || {};
+      const rawData = product.raw_scraped_data || {};
+      
+      // Try to get EAN from multiple sources
+      const eanNumber = rawData.ean_number || specs.ean_number || product.ean_number || '';
+      
+      // Try to get packing dimensions from scraped data
+      const packingLength = rawData.packing_length_cm || specs.packing_length_cm || '';
+      const packingWidth = rawData.packing_width_cm || specs.packing_width_cm || '';
+      const packingHeight = rawData.packing_height_cm || specs.packing_height_cm || '';
+      
+      // Try to get fitting position
+      const fittingPosition = rawData.fitting_position || specs.fitting_position || '';
+      
+      // Extract basic dimensions
       const dimensions = specs.dimensions || {};
-      const packingDimensions = specs.packaging || {};
       
       return [
         'simple', // Type
         product.sku, // SKU
-        product.product_name, // Name
+        product.product_name || `${product.brand} ${product.sku}`, // Name
         '1', // Published
         '0', // Featured
         'visible', // Visibility
-        product.short_description, // Short description
-        product.long_description, // Description
+        product.short_description || '', // Short description
+        product.long_description || '', // Description
         '', // Date sale price starts
         '', // Date sale price ends
         'taxable', // Tax status
@@ -168,18 +181,18 @@ const ExportManager = () => {
         '100', // Stock
         '0', // Backorders allowed?
         '0', // Sold individually?
-        '1', // Weight (kg) - default value
-        dimensions.length || '', // Length
-        dimensions.width || '', // Width
-        dimensions.height || '', // Height
+        rawData.weight || specs.weight || '1', // Weight (kg)
+        dimensions.length || rawData.length_cm || '', // Length
+        dimensions.width || rawData.width_cm || '', // Width
+        dimensions.height || rawData.height_cm || '', // Height
         '1', // Allow customer reviews?
         '', // Purchase note
         '', // Sale price
-        product.price, // Regular price
-        product.category, // Categories
+        product.price || '', // Regular price
+        product.category || 'Auto Parts', // Categories
         `${product.brand}, auto parts`, // Tags
         '', // Shipping class
-        includeImages ? product.images?.join(', ') || '' : '', // Images
+        includeImages ? (product.images && product.images.length > 0 ? product.images.join(', ') : '') : '', // Images
         '', // Download limit
         '', // Download expiry days
         '', // Parent
@@ -189,22 +202,22 @@ const ExportManager = () => {
         '', // External URL
         '', // Button text
         '0', // Position
-        product.ean_number || '', // EAN Number
-        packingDimensions.length || '', // Packing Length
-        packingDimensions.width || '', // Packing Width
-        packingDimensions.height || '', // Packing Height
-        specs.fitting_position || '', // Fitting Position
+        eanNumber, // EAN Number
+        packingLength, // Packing Length (cm)
+        packingWidth, // Packing Width (cm)
+        packingHeight, // Packing Height (cm)
+        fittingPosition, // Fitting Position
         'Brand', // Attribute 1 name
         product.brand, // Attribute 1 value(s)
         '1', // Attribute 1 visible
         '0', // Attribute 1 global
         'OEM Numbers', // Attribute 2 name
-        product.oem_numbers?.join(', ') || '', // Attribute 2 value(s)
+        product.oem_numbers && product.oem_numbers.length > 0 ? product.oem_numbers.join(', ') : '', // Attribute 2 value(s)
         '1', // Attribute 2 visible
         '0', // Attribute 2 global
         product.brand, // Meta: brand
-        product.oem_numbers?.join(', ') || '', // Meta: oem_numbers
-        includeSpecs ? JSON.stringify(product.technical_specs || {}) : '' // Meta: technical_specs
+        product.oem_numbers && product.oem_numbers.length > 0 ? product.oem_numbers.join(', ') : '', // Meta: oem_numbers
+        includeSpecs ? JSON.stringify(Object.assign({}, product.technical_specs || {}, product.raw_scraped_data || {})) : '' // Meta: technical_specs
       ];
     });
 
