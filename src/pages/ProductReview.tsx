@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -7,59 +7,40 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Search, Edit, Eye, Download, Filter } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-
-// Mock data for demonstration
-const mockProducts = [
-  {
-    id: "1",
-    brand: "monroe",
-    sku: "376047SP",
-    product_name: "Monroe Original Gas Pressure Shock Absorber 376047SP",
-    category: "Shock Absorber",
-    short_description: "Premium gas pressure shock absorber for enhanced vehicle stability and comfort.",
-    long_description: "The Monroe Original Gas Pressure Shock Absorber delivers superior ride control...",
-    price: 45.99,
-    scraping_status: "scraped",
-    ai_content_status: "generated",
-    images: ["https://example.com/image1.jpg", "https://example.com/image2.jpg"],
-    oem_numbers: ["5764005", "96653230", "352020"],
-    technical_specs: {
-      "Fitting Position": "Front Axle",
-      "Shock Absorber Design": "Gas Pressure",
-      "Shock Absorber System": "Twin-Tube",
-      "Weight": "2.1 kg"
-    },
-    created_at: "2024-01-15T10:30:00Z"
-  },
-  {
-    id: "2",
-    brand: "bosch",
-    sku: "0986424502",
-    product_name: "Bosch Brake Pad Set Front Axle 0986424502",
-    category: "Brake Pads",
-    short_description: "High-performance brake pads for optimal stopping power and safety.",
-    long_description: "Bosch brake pads are engineered for maximum performance...",
-    price: 32.50,
-    scraping_status: "scraped",
-    ai_content_status: "pending",
-    images: ["https://example.com/brake1.jpg"],
-    oem_numbers: ["1613282780", "425467"],
-    technical_specs: {
-      "Fitting Position": "Front Axle",
-      "Brake System": "ATE",
-      "Height": "52.9 mm",
-      "Thickness": "17.5 mm"
-    },
-    created_at: "2024-01-14T09:15:00Z"
-  }
-];
+import { supabase } from "@/integrations/supabase/client";
 
 const ProductReview = () => {
-  const [products, setProducts] = useState(mockProducts);
+  const [products, setProducts] = useState<any[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedProduct, setSelectedProduct] = useState<any>(null);
   const [isEditing, setIsEditing] = useState(false);
+  const [loading, setLoading] = useState(true);
   const { toast } = useToast();
+
+  useEffect(() => {
+    fetchProducts();
+  }, []);
+
+  const fetchProducts = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('products')
+        .select('*')
+        .order('created_at', { ascending: false });
+      
+      if (error) throw error;
+      setProducts(data || []);
+    } catch (error) {
+      console.error('Error fetching products:', error);
+      toast({
+        title: "Error",
+        description: "Failed to load products",
+        variant: "destructive"
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const filteredProducts = products.filter(product =>
     product.brand.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -91,6 +72,17 @@ const ProductReview = () => {
       description: `Regenerating ${contentType} for product...`,
     });
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-primary/5 to-secondary/5 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+          <p>Loading products...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary/5 to-secondary/5">

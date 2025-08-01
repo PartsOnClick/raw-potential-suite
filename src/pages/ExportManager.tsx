@@ -6,66 +6,61 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Download, FileText, Filter, CheckCircle, AlertCircle, Clock } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-
-// Mock data for demonstration
-const mockBatches = [
-  {
-    id: "1",
-    name: "Auto Parts Batch 2024-01-15",
-    status: "completed",
-    totalItems: 150,
-    successfulItems: 145,
-    createdAt: "2024-01-15T10:30:00Z",
-    products: Array.from({ length: 145 }, (_, i) => ({
-      id: `prod-${i}`,
-      brand: i % 3 === 0 ? "monroe" : i % 3 === 1 ? "bosch" : "sachs",
-      sku: `SKU${String(i).padStart(3, '0')}`,
-      product_name: `Product ${i} - Auto Part`,
-      category: i % 4 === 0 ? "Shock Absorber" : i % 4 === 1 ? "Brake Pads" : i % 4 === 2 ? "Filters" : "Suspension",
-      short_description: `High-quality auto part for optimal performance`,
-      long_description: `Detailed description of product ${i} with technical specifications...`,
-      price: (Math.random() * 100 + 20).toFixed(2),
-      images: [`https://example.com/image${i}.jpg`],
-      oem_numbers: [`OEM${i}`, `REF${i}`],
-      technical_specs: { "Weight": "2.5kg", "Material": "Steel" },
-      scraping_status: "scraped",
-      ai_content_status: "generated"
-    }))
-  },
-  {
-    id: "2",
-    name: "Monroe Parts Import",
-    status: "completed",
-    totalItems: 50,
-    successfulItems: 48,
-    createdAt: "2024-01-14T09:15:00Z",
-    products: Array.from({ length: 48 }, (_, i) => ({
-      id: `monroe-${i}`,
-      brand: "monroe",
-      sku: `MONROE${String(i).padStart(3, '0')}`,
-      product_name: `Monroe Shock Absorber ${i}`,
-      category: "Shock Absorber",
-      short_description: `Monroe premium shock absorber`,
-      long_description: `Professional grade Monroe shock absorber...`,
-      price: (Math.random() * 80 + 30).toFixed(2),
-      images: [`https://example.com/monroe${i}.jpg`],
-      oem_numbers: [`MONROE${i}`],
-      technical_specs: { "Type": "Gas Pressure", "Position": "Front" },
-      scraping_status: "scraped",
-      ai_content_status: "generated"
-    }))
-  }
-];
+import { supabase } from "@/integrations/supabase/client";
 
 const ExportManager = () => {
-  const [batches, setBatches] = useState(mockBatches);
+  const [batches, setBatches] = useState<any[]>([]);
   const [selectedBatch, setSelectedBatch] = useState<string>("");
   const [selectedProducts, setSelectedProducts] = useState<string[]>([]);
   const [exportFormat, setExportFormat] = useState<string>("woocommerce");
   const [includeImages, setIncludeImages] = useState(true);
   const [includeSpecs, setIncludeSpecs] = useState(true);
   const [isExporting, setIsExporting] = useState(false);
+  const [loading, setLoading] = useState(true);
   const { toast } = useToast();
+
+  useEffect(() => {
+    fetchBatches();
+  }, []);
+
+  const fetchBatches = async () => {
+    try {
+      const { data: batchData, error: batchError } = await supabase
+        .from('import_batches')
+        .select('*')
+        .eq('status', 'completed')
+        .order('created_at', { ascending: false });
+      
+      if (batchError) throw batchError;
+
+      const batchesWithProducts = await Promise.all(
+        (batchData || []).map(async (batch) => {
+          const { data: products, error: productsError } = await supabase
+            .from('products')
+            .select('*')
+            .eq('batch_id', batch.id);
+          
+          if (productsError) throw productsError;
+          
+          return {
+            ...batch,
+            products: products || []
+          };
+        })
+      );
+
+      setBatches(batchesWithProducts);
+    } catch (error) {
+      console.error('Error fetching batches:', error);
+      toast({
+        title: "Error",
+        description: "Failed to load export batches",
+        variant: "destructive"
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const currentBatch = batches.find(b => b.id === selectedBatch);
   const readyProducts = currentBatch?.products.filter(p => 
@@ -252,6 +247,17 @@ const ExportManager = () => {
       year: "numeric"
     });
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-primary/5 to-secondary/5 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+          <p>Loading export data...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary/5 to-secondary/5">
