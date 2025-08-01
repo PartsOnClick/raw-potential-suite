@@ -86,6 +86,113 @@ const ExportManager = () => {
     );
   };
 
+  const cleanOemNumbers = (oemArray) => {
+    if (!Array.isArray(oemArray)) return [];
+    
+    return oemArray
+      .filter(item => {
+        if (!item || typeof item !== 'string') return false;
+        
+        // Remove items that are clearly not OEM numbers
+        const cleanItem = item.trim().toUpperCase();
+        
+        // Skip brand names and common words
+        const excludeWords = ['BILSTEIN', 'FEBI', 'BOSCH', 'SACHS', 'PIERBURG', 'REINZ', 'BMW', 'MERCEDES', 'AUDI', 'VW', 'VOLKSWAGEN', 'NUMBERS', 'PART', 'AUTO', 'PARTS', 'GENUINE', 'OEM', 'ORIGINAL'];
+        if (excludeWords.some(word => cleanItem === word)) return false;
+        
+        // Skip items that are too short (less than 4 characters) or too long (more than 20)
+        if (cleanItem.length < 4 || cleanItem.length > 20) return false;
+        
+        // Skip items with too many dots or special characters
+        if ((cleanItem.match(/\./g) || []).length > 1) return false;
+        if (cleanItem.includes('...')) return false;
+        
+        // Skip incomplete numbers (ending with dots or having weird patterns)
+        if (cleanItem.endsWith('.') && cleanItem.length < 8) return false;
+        
+        // Must contain at least some numbers
+        if (!/\d/.test(cleanItem)) return false;
+        
+        return true;
+      })
+      .map(item => item.trim().replace(/\.$/, '')) // Remove trailing dots
+      .filter((item, index, arr) => arr.indexOf(item) === index); // Remove duplicates
+  };
+
+  const extractWeight = (rawData, specs) => {
+    // Try multiple sources and patterns for weight
+    const weightSources = [
+      rawData.weight,
+      specs.weight,
+      rawData.Weight,
+      specs.Weight,
+      rawData.weightKg,
+      specs.weightKg,
+      rawData['Weight (kg)'],
+      specs['Weight (kg)'],
+      rawData.extractedData?.weight,
+      rawData.extractedData?.Weight
+    ];
+    
+    for (let weight of weightSources) {
+      if (weight && typeof weight === 'string') {
+        // Extract numeric value from weight strings like "1.5 kg", "2kg", "500g"
+        const match = weight.match(/(\d+\.?\d*)\s*(kg|g)?/i);
+        if (match) {
+          let value = parseFloat(match[1]);
+          // Convert grams to kg
+          if (match[2] && match[2].toLowerCase() === 'g') {
+            value = value / 1000;
+          }
+          return value.toString();
+        }
+      } else if (weight && typeof weight === 'number') {
+        return weight.toString();
+      }
+    }
+    return '1'; // Default weight
+  };
+
+  const extractDimensions = (rawData, specs) => {
+    const dimensionFields = ['length', 'width', 'height'];
+    const dimensions = {};
+    
+    dimensionFields.forEach(field => {
+      const sources = [
+        rawData[field],
+        specs[field],
+        rawData[field + '_cm'],
+        specs[field + '_cm'],
+        rawData[field.charAt(0).toUpperCase() + field.slice(1)],
+        specs[field.charAt(0).toUpperCase() + field.slice(1)],
+        rawData[`${field} (cm)`],
+        specs[`${field} (cm)`],
+        rawData.extractedData?.[field],
+        rawData.extractedData?.[field + '_cm']
+      ];
+      
+      for (let value of sources) {
+        if (value && typeof value === 'string') {
+          const match = value.match(/(\d+\.?\d*)\s*(cm|mm)?/i);
+          if (match) {
+            let numValue = parseFloat(match[1]);
+            // Convert mm to cm
+            if (match[2] && match[2].toLowerCase() === 'mm') {
+              numValue = numValue / 10;
+            }
+            dimensions[field] = numValue.toString();
+            break;
+          }
+        } else if (value && typeof value === 'number') {
+          dimensions[field] = value.toString();
+          break;
+        }
+      }
+    });
+    
+    return dimensions;
+  };
+
   const generateWooCommerceCSV = () => {
     const selectedProductData = readyProducts.filter(p => selectedProducts.includes(p.id));
     
@@ -150,6 +257,9 @@ const ExportManager = () => {
       const specs = product.technical_specs || {};
       const rawData = product.raw_scraped_data || {};
       
+      // Clean OEM numbers
+      const cleanedOemNumbers = cleanOemNumbers(product.oem_numbers || []);
+      
       // Try to get EAN from multiple sources
       const eanNumber = rawData.ean_number || specs.ean_number || product.ean_number || '';
       
@@ -161,8 +271,11 @@ const ExportManager = () => {
       // Try to get fitting position
       const fittingPosition = rawData.fitting_position || specs.fitting_position || '';
       
-      // Extract basic dimensions
-      const dimensions = specs.dimensions || {};
+      // Extract weight using improved method
+      const weight = extractWeight(rawData, specs);
+      
+      // Extract dimensions using improved method
+      const dimensions = extractDimensions(rawData, specs);
       
       return [
         'simple', // Type
@@ -181,10 +294,10 @@ const ExportManager = () => {
         '100', // Stock
         '0', // Backorders allowed?
         '0', // Sold individually?
-        rawData.weight || specs.weight || '1', // Weight (kg)
-        dimensions.length || rawData.length_cm || '', // Length
-        dimensions.width || rawData.width_cm || '', // Width
-        dimensions.height || rawData.height_cm || '', // Height
+        weight, // Weight (kg)
+        (dimensions as any).length || '', // Length
+        (dimensions as any).width || '', // Width
+        (dimensions as any).height || '', // Height
         '1', // Allow customer reviews?
         '', // Purchase note
         '', // Sale price
@@ -212,11 +325,11 @@ const ExportManager = () => {
         '1', // Attribute 1 visible
         '0', // Attribute 1 global
         'OEM Numbers', // Attribute 2 name
-        product.oem_numbers && product.oem_numbers.length > 0 ? product.oem_numbers.join(', ') : '', // Attribute 2 value(s)
+        cleanedOemNumbers.length > 0 ? cleanedOemNumbers.join(', ') : '', // Attribute 2 value(s)
         '1', // Attribute 2 visible
         '0', // Attribute 2 global
         product.brand, // Meta: brand
-        product.oem_numbers && product.oem_numbers.length > 0 ? product.oem_numbers.join(', ') : '', // Meta: oem_numbers
+        cleanedOemNumbers.length > 0 ? cleanedOemNumbers.join(', ') : '', // Meta: oem_numbers
         includeSpecs ? JSON.stringify(Object.assign({}, product.technical_specs || {}, product.raw_scraped_data || {})) : '' // Meta: technical_specs
       ];
     });
