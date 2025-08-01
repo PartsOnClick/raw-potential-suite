@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Upload as UploadIcon, File, AlertCircle, CheckCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
 
 const Upload = () => {
   const [file, setFile] = useState<File | null>(null);
@@ -14,6 +15,7 @@ const Upload = () => {
     isValid: boolean;
     errors: string[];
     rowCount: number;
+    data?: any[];
   } | null>(null);
   const { toast } = useToast();
 
@@ -40,21 +42,35 @@ const Upload = () => {
         errors.push("CSV must contain 'brand' and 'sku' columns");
       }
       
+      // Parse CSV data
+      const headerRow = lines[0].split(',').map(h => h.trim().toLowerCase());
+      const brandIndex = headerRow.findIndex(h => h.includes('brand'));
+      const skuIndex = headerRow.findIndex(h => h.includes('sku'));
+      
+      const csvData: any[] = [];
       const dataRows = lines.slice(1);
+      
       dataRows.forEach((line, index) => {
-        const columns = line.split(',');
+        const columns = line.split(',').map(col => col.trim());
         if (columns.length < 2) {
           errors.push(`Row ${index + 2}: Insufficient columns`);
-        }
-        if (columns.some(col => !col.trim())) {
-          errors.push(`Row ${index + 2}: Empty brand or SKU`);
+        } else {
+          const brand = columns[brandIndex]?.replace(/['"]/g, '') || '';
+          const sku = columns[skuIndex]?.replace(/['"]/g, '') || '';
+          
+          if (!brand || !sku) {
+            errors.push(`Row ${index + 2}: Empty brand or SKU`);
+          } else {
+            csvData.push({ brand, sku });
+          }
         }
       });
       
       setValidationResult({
         isValid: errors.length === 0,
         errors,
-        rowCount: dataRows.length
+        rowCount: csvData.length,
+        data: csvData
       });
     } catch (error) {
       setValidationResult({
@@ -66,16 +82,67 @@ const Upload = () => {
   };
 
   const handleUpload = async () => {
-    if (!file || !validationResult?.isValid) return;
+    if (!file || !validationResult?.isValid || !validationResult.data) return;
     
     setIsProcessing(true);
     try {
-      // TODO: Implement actual upload and batch creation
-      await new Promise(resolve => setTimeout(resolve, 2000)); // Simulate processing
+      console.log('Creating batch with data:', validationResult.data);
+      
+      // Create batch in database
+      const { data: batch, error: batchError } = await supabase
+        .from('import_batches')
+        .insert({
+          name: `${file.name} - ${new Date().toLocaleString()}`,
+          status: 'pending',
+          total_items: validationResult.rowCount,
+          csv_data: validationResult.data
+        })
+        .select()
+        .single();
+
+      if (batchError) {
+        console.error('Batch creation error:', batchError);
+        throw new Error('Failed to create batch: ' + batchError.message);
+      }
+
+      console.log('Batch created:', batch);
+
+      // Create products in database
+      const productsToInsert = validationResult.data.map(item => ({
+        batch_id: batch.id,
+        brand: item.brand.toLowerCase(),
+        sku: item.sku,
+        autodoc_url: `https://www.autodoc.co.uk/spares-search?keyword=${encodeURIComponent(item.brand)}+${encodeURIComponent(item.sku)}`,
+        scraping_status: 'pending',
+        ai_content_status: 'pending'
+      }));
+
+      const { error: productsError } = await supabase
+        .from('products')
+        .insert(productsToInsert);
+
+      if (productsError) {
+        console.error('Products creation error:', productsError);
+        throw new Error('Failed to create products: ' + productsError.message);
+      }
+
+      console.log('Products created, starting batch processing...');
+
+      // Start batch processing
+      const response = await supabase.functions.invoke('batch-processor', {
+        body: { batchId: batch.id }
+      });
+
+      if (response.error) {
+        console.error('Batch processing error:', response.error);
+        throw new Error('Failed to start processing: ' + response.error.message);
+      }
+
+      console.log('Batch processing started successfully');
       
       toast({
         title: "Upload Successful",
-        description: `Created batch with ${validationResult.rowCount} items`,
+        description: `Created batch with ${validationResult.rowCount} items. Processing started!`,
       });
       
       // Reset form
@@ -84,10 +151,11 @@ const Upload = () => {
       const input = document.querySelector('input[type="file"]') as HTMLInputElement;
       if (input) input.value = '';
       
-    } catch (error) {
+    } catch (error: any) {
+      console.error('Upload error:', error);
       toast({
         title: "Upload Failed",
-        description: "Failed to create processing batch",
+        description: error.message || "Failed to create processing batch",
         variant: "destructive",
       });
     } finally {
@@ -179,7 +247,7 @@ const Upload = () => {
                 className="w-full"
                 size="lg"
               >
-                {isProcessing ? "Creating Batch..." : "Start Processing"}
+                {isProcessing ? "Creating Batch & Starting Processing..." : "Start Processing"}
               </Button>
             </CardContent>
           </Card>
