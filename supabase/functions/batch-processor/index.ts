@@ -61,21 +61,16 @@ serve(async (req) => {
         console.log(`Processing ${product.brand} ${product.sku}`);
         
         // Step 1: Scrape Autodoc data
-        const scrapeResponse = await fetch(`${supabaseUrl}/functions/v1/autodoc-scraper`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${supabaseKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
+        const { data: scrapeResult, error: scrapeError } = await supabase.functions.invoke('autodoc-scraper', {
+          body: {
             brand: product.brand,
             sku: product.sku,
             productId: product.id,
-          }),
+          },
         });
 
-        if (!scrapeResponse.ok) {
-          throw new Error(`Scraping failed: ${scrapeResponse.status}`);
+        if (scrapeError) {
+          throw new Error(`Scraping failed: ${scrapeError.message}`);
         }
 
         // Wait a bit to avoid rate limiting
@@ -90,49 +85,34 @@ serve(async (req) => {
 
         if (updatedProduct.data && updatedProduct.data.scraping_status === 'scraped') {
           // Generate title
-          await fetch(`${supabaseUrl}/functions/v1/deepseek-content-generator`, {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${supabaseKey}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
+          await supabase.functions.invoke('deepseek-content-generator', {
+            body: {
               productId: product.id,
               contentType: 'title',
               productData: updatedProduct.data,
-            }),
+            },
           });
 
           await new Promise(resolve => setTimeout(resolve, 1000));
 
           // Generate short description
-          await fetch(`${supabaseUrl}/functions/v1/deepseek-content-generator`, {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${supabaseKey}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
+          await supabase.functions.invoke('deepseek-content-generator', {
+            body: {
               productId: product.id,
               contentType: 'short_description',
               productData: updatedProduct.data,
-            }),
+            },
           });
 
           await new Promise(resolve => setTimeout(resolve, 1000));
 
           // Generate long description
-          await fetch(`${supabaseUrl}/functions/v1/deepseek-content-generator`, {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${supabaseKey}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
+          await supabase.functions.invoke('deepseek-content-generator', {
+            body: {
               productId: product.id,
               contentType: 'long_description',
               productData: updatedProduct.data,
-            }),
+            },
           });
         }
 
