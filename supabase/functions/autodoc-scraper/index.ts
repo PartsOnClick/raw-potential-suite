@@ -19,10 +19,15 @@ serve(async (req) => {
   try {
     const { brand, sku, productId } = await req.json();
     
-    console.log(`Starting scrape for ${brand} ${sku}`);
+    console.log(`Starting scrape for ${brand} ${sku}, productId: ${productId}`);
+    
+    if (!brand || !sku || !productId) {
+      throw new Error('Missing required parameters: brand, sku, or productId');
+    }
     
     // Build Autodoc URL
     const autodocUrl = `https://www.autodoc.co.uk/spares-search?keyword=${encodeURIComponent(brand)}+${encodeURIComponent(sku)}`;
+    console.log(`Fetching URL: ${autodocUrl}`);
     
     // Add random delay to avoid rate limiting
     await new Promise(resolve => setTimeout(resolve, Math.random() * 2000 + 1000));
@@ -49,8 +54,11 @@ serve(async (req) => {
     });
 
     if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+      console.error(`HTTP error! status: ${response.status}, statusText: ${response.statusText}`);
+      throw new Error(`HTTP error! status: ${response.status} - ${response.statusText}`);
     }
+
+    console.log(`Successfully fetched page for ${brand} ${sku}`);
 
     const html = await response.text();
     
@@ -104,22 +112,36 @@ serve(async (req) => {
     });
 
   } catch (error) {
-    console.error('Scraping error:', error);
+    console.error('Scraping error for', { brand: 'unknown', sku: 'unknown' }, ':', error);
+    
+    // Try to get productId from request for logging
+    let productId = null;
+    try {
+      const requestData = await req.json();
+      productId = requestData.productId;
+      console.error(`Error details - ProductID: ${productId}, Error: ${error.message}`);
+    } catch (parseError) {
+      console.error('Could not parse request for error logging:', parseError);
+    }
     
     // Log error if productId available
-    const { productId } = await req.json().catch(() => ({}));
     if (productId) {
-      await supabase.from('processing_logs').insert({
-        product_id: productId,
-        operation_type: 'scraping',
-        status: 'error',
-        error_message: error.message,
-      });
+      try {
+        await supabase.from('processing_logs').insert({
+          product_id: productId,
+          operation_type: 'scraping',
+          status: 'error',
+          error_message: error.message,
+        });
+      } catch (logError) {
+        console.error('Failed to log error to database:', logError);
+      }
     }
 
     return new Response(JSON.stringify({ 
       success: false, 
-      error: error.message 
+      error: error.message,
+      details: error.stack 
     }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
