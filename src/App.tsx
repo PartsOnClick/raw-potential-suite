@@ -8,6 +8,7 @@ import Index from "./pages/Index";
 import Upload from "./pages/Upload";
 import ProcessingStatus from "./pages/ProcessingStatus";
 import ProductReview from "./pages/ProductReview";
+import ExportManager from "./pages/ExportManager";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -24,7 +25,7 @@ const App = () => (
           <Route path="/upload" element={<Upload />} />
           <Route path="/status" element={<ProcessingStatus />} />
           <Route path="/products" element={<ProductReview />} />
-          <Route path="/export" element={<div className="p-8 text-center">Export page coming soon...</div>} />
+          <Route path="/export" element={<ExportManager />} />
           <Route path="/history" element={<div className="p-8 text-center">History page coming soon...</div>} />
           <Route path="/analytics" element={<div className="p-8 text-center">Analytics page coming soon...</div>} />
           <Route path="*" element={<NotFound />} />
