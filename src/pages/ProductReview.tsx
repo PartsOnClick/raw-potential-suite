@@ -5,7 +5,8 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { Search, Edit, Eye, Download, Filter } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Search, Edit, Eye, Download, Filter, Info, RefreshCw, Settings } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -15,6 +16,10 @@ const ProductReview = () => {
   const [selectedProduct, setSelectedProduct] = useState<any>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [regenerating, setRegenerating] = useState<string>("");
+  const [showRawData, setShowRawData] = useState(false);
+  const [editingPrompt, setEditingPrompt] = useState<string>("");
+  const [customPrompt, setCustomPrompt] = useState<string>("");
   const { toast } = useToast();
 
   useEffect(() => {
@@ -58,19 +63,145 @@ const ProductReview = () => {
     }
   };
 
-  const handleSaveProduct = () => {
-    toast({
-      title: "Product Updated",
-      description: "Product information has been saved successfully.",
-    });
-    setIsEditing(false);
+  const handleSaveProduct = async () => {
+    if (!selectedProduct) return;
+    
+    try {
+      const { error } = await supabase
+        .from('products')
+        .update({
+          product_name: selectedProduct.product_name,
+          short_description: selectedProduct.short_description,
+          long_description: selectedProduct.long_description,
+          category: selectedProduct.category,
+          price: selectedProduct.price
+        })
+        .eq('id', selectedProduct.id);
+
+      if (error) throw error;
+
+      toast({
+        title: "Product Updated",
+        description: "Product information has been saved successfully.",
+      });
+      setIsEditing(false);
+      fetchProducts(); // Refresh the list
+    } catch (error) {
+      console.error('Error saving product:', error);
+      toast({
+        title: "Error",
+        description: "Failed to save product changes",
+        variant: "destructive"
+      });
+    }
   };
 
-  const handleRegenerateContent = (productId: string, contentType: string) => {
-    toast({
-      title: "Content Regeneration Started",
-      description: `Regenerating ${contentType} for product...`,
-    });
+  const handleRegenerateContent = async (productId: string, contentType: string) => {
+    setRegenerating(contentType);
+    
+    try {
+      const product = products.find(p => p.id === productId);
+      if (!product) throw new Error('Product not found');
+
+      const payload: any = {
+        productId,
+        contentType,
+        productData: {
+          brand: product.brand,
+          sku: product.sku,
+          category: product.category,
+          technicalSpecs: product.technical_specs || {},
+          oemNumbers: product.oem_numbers || [],
+          images: product.images || []
+        }
+      };
+
+      // Add custom prompt if editing
+      if (editingPrompt === contentType && customPrompt.trim()) {
+        payload.customPrompt = customPrompt;
+      }
+
+      const { data, error } = await supabase.functions.invoke('deepseek-content-generator', {
+        body: payload
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: "Content Regenerated",
+        description: `Successfully regenerated ${contentType}`,
+      });
+      
+      // Refresh the product data
+      fetchProducts();
+      if (selectedProduct.id === productId) {
+        const updatedProduct = await supabase
+          .from('products')
+          .select('*')
+          .eq('id', productId)
+          .single();
+        if (updatedProduct.data) {
+          setSelectedProduct(updatedProduct.data);
+        }
+      }
+    } catch (error) {
+      console.error('Error regenerating content:', error);
+      toast({
+        title: "Error",
+        description: `Failed to regenerate ${contentType}: ${error.message}`,
+        variant: "destructive"
+      });
+    } finally {
+      setRegenerating("");
+      setEditingPrompt("");
+      setCustomPrompt("");
+    }
+  };
+
+  const handleRescrapeProduct = async (productId: string) => {
+    setRegenerating("scraping");
+    
+    try {
+      const product = products.find(p => p.id === productId);
+      if (!product) throw new Error('Product not found');
+
+      const { data, error } = await supabase.functions.invoke('google-product-search', {
+        body: {
+          brand: product.brand,
+          sku: product.sku,
+          productId: productId
+        }
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: "Product Rescraped",
+        description: "Successfully rescraped product data",
+      });
+      
+      // Refresh the product data
+      fetchProducts();
+      if (selectedProduct.id === productId) {
+        const updatedProduct = await supabase
+          .from('products')
+          .select('*')
+          .eq('id', productId)
+          .single();
+        if (updatedProduct.data) {
+          setSelectedProduct(updatedProduct.data);
+        }
+      }
+    } catch (error) {
+      console.error('Error rescrapting product:', error);
+      toast({
+        title: "Error",
+        description: `Failed to rescrape product: ${error.message}`,
+        variant: "destructive"
+      });
+    } finally {
+      setRegenerating("");
+    }
   };
 
   if (loading) {
@@ -157,6 +288,72 @@ const ProductReview = () => {
                     <div className="flex items-center justify-between">
                       <CardTitle>{selectedProduct.brand} {selectedProduct.sku}</CardTitle>
                       <div className="flex gap-2">
+                        <Dialog open={showRawData} onOpenChange={setShowRawData}>
+                          <DialogTrigger asChild>
+                            <Button variant="outline" size="sm">
+                              <Info className="w-4 h-4 mr-2" />
+                              Raw Data
+                            </Button>
+                          </DialogTrigger>
+                          <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+                            <DialogHeader>
+                              <DialogTitle>Raw Scraped Data - {selectedProduct.brand} {selectedProduct.sku}</DialogTitle>
+                            </DialogHeader>
+                            <div className="space-y-4">
+                              <div>
+                                <h4 className="font-medium mb-2">Scraping Status: 
+                                  <Badge className={`ml-2 ${getStatusColor(selectedProduct.scraping_status)}`}>
+                                    {selectedProduct.scraping_status}
+                                  </Badge>
+                                </h4>
+                                <h4 className="font-medium mb-2">AI Content Status: 
+                                  <Badge className={`ml-2 ${getStatusColor(selectedProduct.ai_content_status)}`}>
+                                    {selectedProduct.ai_content_status}
+                                  </Badge>
+                                </h4>
+                                {selectedProduct.scraping_status !== 'scraped' && (
+                                  <Button 
+                                    onClick={() => handleRescrapeProduct(selectedProduct.id)}
+                                    disabled={regenerating === "scraping"}
+                                    size="sm"
+                                    className="mb-4"
+                                  >
+                                    {regenerating === "scraping" ? (
+                                      <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                                    ) : (
+                                      <RefreshCw className="w-4 h-4 mr-2" />
+                                    )}
+                                    Rescrape Data
+                                  </Button>
+                                )}
+                              </div>
+                              <div>
+                                <Label className="text-sm font-medium">Technical Specifications</Label>
+                                <pre className="bg-muted p-3 rounded text-xs overflow-x-auto">
+                                  {JSON.stringify(selectedProduct.technical_specs || {}, null, 2)}
+                                </pre>
+                              </div>
+                              <div>
+                                <Label className="text-sm font-medium">OEM Numbers</Label>
+                                <pre className="bg-muted p-3 rounded text-xs overflow-x-auto">
+                                  {JSON.stringify(selectedProduct.oem_numbers || [], null, 2)}
+                                </pre>
+                              </div>
+                              <div>
+                                <Label className="text-sm font-medium">Images</Label>
+                                <pre className="bg-muted p-3 rounded text-xs overflow-x-auto">
+                                  {JSON.stringify(selectedProduct.images || [], null, 2)}
+                                </pre>
+                              </div>
+                              <div>
+                                <Label className="text-sm font-medium">All Raw Data</Label>
+                                <pre className="bg-muted p-3 rounded text-xs overflow-x-auto">
+                                  {JSON.stringify(selectedProduct, null, 2)}
+                                </pre>
+                              </div>
+                            </div>
+                          </DialogContent>
+                        </Dialog>
                         <Button
                           variant="outline"
                           size="sm"
@@ -188,16 +385,45 @@ const ProductReview = () => {
                     <div>
                       <div className="flex items-center justify-between mb-2">
                         <Label>Product Title</Label>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleRegenerateContent(selectedProduct.id, 'title')}
-                        >
-                          Regenerate
-                        </Button>
+                        <div className="flex gap-2">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setEditingPrompt(editingPrompt === 'title' ? '' : 'title')}
+                          >
+                            <Settings className="w-4 h-4 mr-2" />
+                            {editingPrompt === 'title' ? 'Cancel' : 'Edit Prompt'}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleRegenerateContent(selectedProduct.id, 'title')}
+                            disabled={regenerating === 'title'}
+                          >
+                            {regenerating === 'title' ? (
+                              <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                            ) : (
+                              <RefreshCw className="w-4 h-4 mr-2" />
+                            )}
+                            Regenerate
+                          </Button>
+                        </div>
                       </div>
+                      {editingPrompt === 'title' && (
+                        <div className="mb-3">
+                          <Label className="text-sm">Custom Prompt (optional)</Label>
+                          <Textarea
+                            value={customPrompt}
+                            onChange={(e) => setCustomPrompt(e.target.value)}
+                            placeholder="Enter custom instructions for title generation..."
+                            rows={2}
+                            className="mt-1"
+                          />
+                        </div>
+                      )}
                       <Input
                         value={selectedProduct.product_name || ''}
+                        onChange={(e) => setSelectedProduct({...selectedProduct, product_name: e.target.value})}
                         disabled={!isEditing}
                         placeholder="AI-generated product title will appear here..."
                       />
@@ -206,16 +432,45 @@ const ProductReview = () => {
                     <div>
                       <div className="flex items-center justify-between mb-2">
                         <Label>Short Description</Label>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleRegenerateContent(selectedProduct.id, 'short_description')}
-                        >
-                          Regenerate
-                        </Button>
+                        <div className="flex gap-2">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setEditingPrompt(editingPrompt === 'short_description' ? '' : 'short_description')}
+                          >
+                            <Settings className="w-4 h-4 mr-2" />
+                            {editingPrompt === 'short_description' ? 'Cancel' : 'Edit Prompt'}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleRegenerateContent(selectedProduct.id, 'short_description')}
+                            disabled={regenerating === 'short_description'}
+                          >
+                            {regenerating === 'short_description' ? (
+                              <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                            ) : (
+                              <RefreshCw className="w-4 h-4 mr-2" />
+                            )}
+                            Regenerate
+                          </Button>
+                        </div>
                       </div>
+                      {editingPrompt === 'short_description' && (
+                        <div className="mb-3">
+                          <Label className="text-sm">Custom Prompt (optional)</Label>
+                          <Textarea
+                            value={customPrompt}
+                            onChange={(e) => setCustomPrompt(e.target.value)}
+                            placeholder="Enter custom instructions for short description generation..."
+                            rows={2}
+                            className="mt-1"
+                          />
+                        </div>
+                      )}
                       <Textarea
                         value={selectedProduct.short_description || ''}
+                        onChange={(e) => setSelectedProduct({...selectedProduct, short_description: e.target.value})}
                         disabled={!isEditing}
                         placeholder="AI-generated short description will appear here..."
                         rows={3}
@@ -225,16 +480,45 @@ const ProductReview = () => {
                     <div>
                       <div className="flex items-center justify-between mb-2">
                         <Label>Long Description</Label>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleRegenerateContent(selectedProduct.id, 'long_description')}
-                        >
-                          Regenerate
-                        </Button>
+                        <div className="flex gap-2">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setEditingPrompt(editingPrompt === 'long_description' ? '' : 'long_description')}
+                          >
+                            <Settings className="w-4 h-4 mr-2" />
+                            {editingPrompt === 'long_description' ? 'Cancel' : 'Edit Prompt'}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleRegenerateContent(selectedProduct.id, 'long_description')}
+                            disabled={regenerating === 'long_description'}
+                          >
+                            {regenerating === 'long_description' ? (
+                              <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                            ) : (
+                              <RefreshCw className="w-4 h-4 mr-2" />
+                            )}
+                            Regenerate
+                          </Button>
+                        </div>
                       </div>
+                      {editingPrompt === 'long_description' && (
+                        <div className="mb-3">
+                          <Label className="text-sm">Custom Prompt (optional)</Label>
+                          <Textarea
+                            value={customPrompt}
+                            onChange={(e) => setCustomPrompt(e.target.value)}
+                            placeholder="Enter custom instructions for long description generation..."
+                            rows={2}
+                            className="mt-1"
+                          />
+                        </div>
+                      )}
                       <Textarea
                         value={selectedProduct.long_description || ''}
+                        onChange={(e) => setSelectedProduct({...selectedProduct, long_description: e.target.value})}
                         disabled={!isEditing}
                         placeholder="AI-generated long description will appear here..."
                         rows={8}
@@ -246,6 +530,7 @@ const ProductReview = () => {
                         <Label>Category</Label>
                         <Input
                           value={selectedProduct.category || ''}
+                          onChange={(e) => setSelectedProduct({...selectedProduct, category: e.target.value})}
                           disabled={!isEditing}
                         />
                       </div>
@@ -254,6 +539,7 @@ const ProductReview = () => {
                         <Input
                           type="number"
                           value={selectedProduct.price || ''}
+                          onChange={(e) => setSelectedProduct({...selectedProduct, price: e.target.value})}
                           disabled={!isEditing}
                           step="0.01"
                         />
