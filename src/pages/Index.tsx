@@ -1,16 +1,37 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Upload, TrendingUp, Cog, History, FileText, Activity } from "lucide-react";
+import { Upload, TrendingUp, Cog, History, FileText, Activity, Settings } from "lucide-react";
 import { Link } from "react-router-dom";
+import { useState } from "react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import PromptSettings from "@/components/PromptSettings";
 
 const Index = () => {
+  const [showPromptSettings, setShowPromptSettings] = useState(false);
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary/5 to-secondary/5">
       <div className="container mx-auto py-8">
         <div className="text-center mb-12">
-          <h1 className="text-4xl font-bold mb-4 bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
-            Auto Parts Data Processor
-          </h1>
+          <div className="flex items-center justify-center gap-4 mb-4">
+            <h1 className="text-4xl font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
+              Auto Parts Data Processor
+            </h1>
+            <Dialog open={showPromptSettings} onOpenChange={setShowPromptSettings}>
+              <DialogTrigger asChild>
+                <Button variant="outline" size="sm" className="ml-4">
+                  <Settings className="w-4 h-4 mr-2" />
+                  AI Prompt Settings
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
+                <DialogHeader>
+                  <DialogTitle>AI Prompt Settings</DialogTitle>
+                </DialogHeader>
+                <PromptSettings />
+              </DialogContent>
+            </Dialog>
+          </div>
           <p className="text-lg text-muted-foreground mb-8 max-w-2xl mx-auto">
             Transform your CSV data into WooCommerce-ready product listings with automated Autodoc scraping and AI-powered content generation
           </p>

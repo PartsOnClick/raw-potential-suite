@@ -86,12 +86,26 @@ serve(async (req) => {
           console.error(`Google search error for ${product.brand} ${product.sku}:`, searchErr);
         }
 
-        // Get updated product data
+        // Wait for scraping to complete and get updated product data
+        await new Promise(resolve => setTimeout(resolve, 2000)); // Allow more time for scraping
+        
         const { data: updatedProduct } = await supabaseAdmin
           .from('products')
           .select('*')
           .eq('id', product.id)
           .single();
+
+        // Check if scraping was successful before proceeding with AI generation
+        const hasScrapedData = updatedProduct && (
+          updatedProduct.product_name || 
+          updatedProduct.category || 
+          Object.keys(updatedProduct.technical_specs || {}).length > 0 ||
+          updatedProduct.oem_numbers?.length > 0
+        );
+
+        if (!hasScrapedData) {
+          console.warn(`Limited scraped data for ${product.brand} ${product.sku}, proceeding with basic data`);
+        }
 
         // Step 2: Generate AI content (title, short description, long description) sequentially
         const contentTypes = ['title', 'short_description', 'long_description'];

@@ -161,6 +161,12 @@ serve(async (req) => {
 });
 
 function createTitlePrompt(productData: any): string {
+  // Try to get custom prompt from request or use default
+  const customPrompt = productData.customPrompt;
+  if (customPrompt) {
+    return replacePromptVariables(customPrompt, productData);
+  }
+  
   return `Generate a concise, SEO-optimized product title for this auto part:
 Brand: ${productData.brand}
 SKU: ${productData.sku}
@@ -221,6 +227,11 @@ Return only the HTML description, no explanations.`;
 }
 
 function createMetaDescriptionPrompt(productData: any): string {
+  const customPrompt = productData.customPrompt;
+  if (customPrompt) {
+    return replacePromptVariables(customPrompt, productData);
+  }
+  
   return `Create an SEO meta description for this automotive part:
 
 Brand: ${productData.brand}
@@ -237,4 +248,16 @@ Requirements:
 - Compelling and click-worthy
 
 Format: [Brand] [Part Type] [SKU] - [Key Benefit]. [Price] with [Quality/Delivery benefit]. [CTA]`;
+}
+
+function replacePromptVariables(template: string, productData: any): string {
+  return template
+    .replace(/{brand}/g, productData.brand || 'N/A')
+    .replace(/{sku}/g, productData.sku || 'N/A')
+    .replace(/{category}/g, productData.category || 'Auto Part')
+    .replace(/{price}/g, productData.price ? '£' + productData.price : 'N/A')
+    .replace(/{oem_numbers}/g, productData.oem_numbers?.join(', ') || 'N/A')
+    .replace(/{technical_specs}/g, JSON.stringify(productData.technical_specs || {}))
+    .replace(/{product_name}/g, productData.product_name || 'N/A')
+    .replace(/{short_description}/g, productData.short_description || 'N/A');
 }
