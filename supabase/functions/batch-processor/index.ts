@@ -60,8 +60,8 @@ serve(async (req) => {
       try {
         console.log(`Processing ${product.brand} ${product.sku}`);
         
-        // Step 1: Scrape Autodoc data
-        const { data: scrapeResult, error: scrapeError } = await supabase.functions.invoke('autodoc-scraper', {
+        // Step 1: Search Google for product data
+        const { data: scrapeResult, error: scrapeError } = await supabase.functions.invoke('google-product-search', {
           body: {
             brand: product.brand,
             sku: product.sku,
@@ -70,13 +70,13 @@ serve(async (req) => {
         });
 
         if (scrapeError) {
-          console.error(`Scraping failed for ${product.brand} ${product.sku}:`, scrapeError.message);
-          throw new Error(`Scraping failed: ${scrapeError.message}`);
+          console.error(`Google search failed for ${product.brand} ${product.sku}:`, scrapeError.message);
+          throw new Error(`Google search failed: ${scrapeError.message}`);
         }
 
-        // Check if scraping was successful or blocked
+        // Check if Google search was successful
         if (scrapeResult && scrapeResult.success) {
-          console.log(`Scraping successful for ${product.brand} ${product.sku}, blocked: ${scrapeResult.blocked || false}`);
+          console.log(`Google search successful for ${product.brand} ${product.sku}, found ${scrapeResult.searchResults || 0} results`);
         }
 
         // Wait a bit to avoid rate limiting
@@ -89,7 +89,7 @@ serve(async (req) => {
           .eq('id', product.id)
           .single();
 
-        if (updatedProduct.data && (updatedProduct.data.scraping_status === 'scraped' || updatedProduct.data.scraping_status === 'failed_blocked')) {
+        if (updatedProduct.data && updatedProduct.data.scraping_status === 'scraped') {
           // Generate title
           await supabase.functions.invoke('deepseek-content-generator', {
             body: {
