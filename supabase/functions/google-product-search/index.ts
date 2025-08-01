@@ -145,9 +145,13 @@ function extractDataFromSearchResults(searchData: any, brand: string, sku: strin
     }
   }
   
-  // Extract category from search snippets
+  // Extract category from search snippets with enhanced patterns
   let category = 'Auto Parts';
-  const categoryKeywords = ['brake', 'engine', 'suspension', 'filter', 'pump', 'sensor', 'bearing', 'clutch', 'transmission', 'radiator'];
+  const categoryKeywords = [
+    'brake', 'engine', 'suspension', 'filter', 'pump', 'sensor', 'bearing', 
+    'clutch', 'transmission', 'radiator', 'gasket', 'seal', 'timing', 'belt',
+    'coolant', 'thermostat', 'alternator', 'starter', 'ignition', 'fuel'
+  ];
   for (const item of items) {
     const text = `${item.title} ${item.snippet}`.toLowerCase();
     for (const keyword of categoryKeywords) {
@@ -172,47 +176,87 @@ function extractDataFromSearchResults(searchData: any, brand: string, sku: strin
     }
   }
   
-  // Extract technical specs from snippets
+  // Enhanced technical specs extraction
   const technicalSpecs: Record<string, string> = {};
   for (const item of items) {
-    const snippet = item.snippet || '';
+    const text = `${item.title} ${item.snippet}`;
     
-    // Look for common specification patterns
+    // Enhanced specification patterns including new requested fields
     const specPatterns = [
+      // Existing patterns
       /weight[:\s]+([0-9.,]+\s*(?:kg|g|lbs|oz))/i,
       /dimension[s]?[:\s]+([0-9.,x\s]+(?:mm|cm|inch))/i,
       /diameter[:\s]+([0-9.,]+\s*(?:mm|cm|inch))/i,
       /length[:\s]+([0-9.,]+\s*(?:mm|cm|inch))/i,
       /width[:\s]+([0-9.,]+\s*(?:mm|cm|inch))/i,
       /height[:\s]+([0-9.,]+\s*(?:mm|cm|inch))/i,
+      
+      // New requested patterns
+      /EAN[:\s]+([0-9]{8,14})/i,
+      /fitting\s*position[:\s]+([^,\n.]+)/i,
+      /packaging\s*length[:\s]*([0-9.,]+\s*(?:cm|mm))/i,
+      /packaging\s*width[:\s]*([0-9.,]+\s*(?:cm|mm))/i,
+      /packaging\s*height[:\s]*([0-9.,]+\s*(?:cm|mm))/i,
+      /package\s*dimension[s]?[:\s]*([0-9.,x\s]+(?:cm|mm))/i,
+      
+      // Additional automotive specs
+      /inner\s*diameter[:\s]+([0-9.,]+\s*(?:mm|cm))/i,
+      /outer\s*diameter[:\s]+([0-9.,]+\s*(?:mm|cm))/i,
+      /thickness[:\s]+([0-9.,]+\s*(?:mm|cm))/i,
+      /material[:\s]+([^,\n.]+)/i,
+      /manufacturer[:\s]+([^,\n.]+)/i,
     ];
     
     for (const pattern of specPatterns) {
-      const match = snippet.match(pattern);
+      const match = text.match(pattern);
       if (match) {
-        const key = pattern.source.split('[')[0].replace(/[^a-zA-Z]/g, '');
-        technicalSpecs[key.charAt(0).toUpperCase() + key.slice(1)] = match[1];
+        let key = pattern.source.split('[')[0].replace(/[^a-zA-Z\s]/g, '').trim();
+        key = key.charAt(0).toUpperCase() + key.slice(1);
+        
+        // Clean up specific keys
+        if (key.includes('packaging')) {
+          key = key.replace(/packaging\s*/i, 'Packaging ');
+        }
+        if (key.includes('fitting')) {
+          key = 'Fitting Position';
+        }
+        
+        technicalSpecs[key] = match[1].trim();
       }
     }
   }
   
-  // Extract OEM numbers from snippets
+  // Enhanced OEM numbers extraction
   const oemNumbers: string[] = [sku]; // Always include the original SKU
   for (const item of items) {
     const text = `${item.title} ${item.snippet}`;
     const oemPatterns = [
-      /(?:OEM|part\s*number|reference)[:\s]*([A-Z0-9\-]{4,})/gi,
-      /([A-Z0-9\-]{6,})/g, // Generic alphanumeric patterns
+      /(?:OEM|OE|part\s*number|article\s*number|reference)[:\s#№]*([A-Z0-9\-\.]{4,})/gi,
+      /№[:\s]*([A-Z0-9\-\.]{4,})/gi,
+      /([A-Z0-9\-\.]{6,})/g, // Generic alphanumeric patterns
     ];
     
     for (const pattern of oemPatterns) {
       let match;
       while ((match = pattern.exec(text)) !== null) {
         const number = match[1];
-        if (number && number.length >= 4 && number.length <= 20 && !oemNumbers.includes(number)) {
+        if (number && number.length >= 4 && number.length <= 25 && 
+            !oemNumbers.includes(number) && 
+            !/^(http|www|com|org)/.test(number.toLowerCase())) {
           oemNumbers.push(number);
         }
       }
+    }
+  }
+  
+  // Extract EAN specifically
+  let eanNumber = null;
+  for (const item of items) {
+    const text = `${item.title} ${item.snippet}`;
+    const eanMatch = text.match(/EAN[:\s]*([0-9]{8,14})/i);
+    if (eanMatch) {
+      eanNumber = eanMatch[1];
+      break;
     }
   }
   
@@ -239,12 +283,17 @@ function extractDataFromSearchResults(searchData: any, brand: string, sku: strin
     if (price) break;
   }
   
+  // Add EAN to technical specs if found
+  if (eanNumber) {
+    technicalSpecs['EAN'] = eanNumber;
+  }
+  
   return {
     productName: productName.length > 100 ? productName.substring(0, 100) + '...' : productName,
     category,
     images: [...new Set(images)].slice(0, 5), // Remove duplicates and limit to 5
     technicalSpecs,
-    oemNumbers: [...new Set(oemNumbers)].slice(0, 10), // Remove duplicates and limit to 10
+    oemNumbers: [...new Set(oemNumbers)].slice(0, 15), // Increased limit for more OE numbers
     price,
     availability: 'Check with supplier',
   };
