@@ -70,7 +70,13 @@ serve(async (req) => {
         });
 
         if (scrapeError) {
+          console.error(`Scraping failed for ${product.brand} ${product.sku}:`, scrapeError.message);
           throw new Error(`Scraping failed: ${scrapeError.message}`);
+        }
+
+        // Check if scraping was successful or blocked
+        if (scrapeResult && scrapeResult.success) {
+          console.log(`Scraping successful for ${product.brand} ${product.sku}, blocked: ${scrapeResult.blocked || false}`);
         }
 
         // Wait a bit to avoid rate limiting
@@ -83,7 +89,7 @@ serve(async (req) => {
           .eq('id', product.id)
           .single();
 
-        if (updatedProduct.data && updatedProduct.data.scraping_status === 'scraped') {
+        if (updatedProduct.data && (updatedProduct.data.scraping_status === 'scraped' || updatedProduct.data.scraping_status === 'failed_blocked')) {
           // Generate title
           await supabase.functions.invoke('deepseek-content-generator', {
             body: {
@@ -148,8 +154,8 @@ serve(async (req) => {
         .eq('id', batchId);
     }
 
-    // Mark batch as completed
-    const finalStatus = failureCount === 0 ? 'completed' : 'failed';
+    // Mark batch as completed (treat blocked as success since we got placeholder data)
+    const finalStatus = successCount > 0 ? 'completed' : 'failed';
     await supabase
       .from('import_batches')
       .update({

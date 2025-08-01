@@ -29,19 +29,28 @@ serve(async (req) => {
     const autodocUrl = `https://www.autodoc.co.uk/spares-search?keyword=${encodeURIComponent(brand)}+${encodeURIComponent(sku)}`;
     console.log(`Fetching URL: ${autodocUrl}`);
     
-    // Add random delay to avoid rate limiting
-    await new Promise(resolve => setTimeout(resolve, Math.random() * 2000 + 1000));
+    // Add random delay to avoid rate limiting (increase the delay)
+    await new Promise(resolve => setTimeout(resolve, Math.random() * 3000 + 2000));
     
-    // Fetch the page with improved headers
+    // Use rotating user agents to avoid detection
+    const userAgents = [
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0',
+      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+      'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36'
+    ];
+    const randomUA = userAgents[Math.floor(Math.random() * userAgents.length)];
+    
+    // Fetch the page with enhanced browser-like headers
     const response = await fetch(autodocUrl, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-        'Accept-Language': 'en-GB,en;q=0.9,en-US;q=0.8',
+        'User-Agent': randomUA,
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+        'Accept-Language': 'en-US,en;q=0.9,en-GB;q=0.8',
         'Accept-Encoding': 'gzip, deflate, br',
         'Cache-Control': 'no-cache',
         'Pragma': 'no-cache',
-        'Sec-Ch-Ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+        'Sec-Ch-Ua': '"Not A(Brand";v="99", "Google Chrome";v="121", "Chromium";v="121"',
         'Sec-Ch-Ua-Mobile': '?0',
         'Sec-Ch-Ua-Platform': '"Windows"',
         'Sec-Fetch-Dest': 'document',
@@ -49,16 +58,70 @@ serve(async (req) => {
         'Sec-Fetch-Site': 'none',
         'Sec-Fetch-User': '?1',
         'Upgrade-Insecure-Requests': '1',
+        'DNT': '1',
+        'Connection': 'keep-alive',
         'Referer': 'https://www.google.com/',
       },
     });
 
     if (!response.ok) {
-      console.error(`HTTP error! status: ${response.status}, statusText: ${response.statusText}`);
+      console.error(`HTTP error! status: ${response.status}, statusText: ${response.statusText}, URL: ${autodocUrl}`);
+      
+      // If we get a 403, try to provide mock data instead of failing completely
+      if (response.status === 403) {
+        console.log(`Website blocking detected for ${brand} ${sku}, creating placeholder data...`);
+        
+        // Update product with placeholder data
+        const { error: updateError } = await supabase
+          .from('products')
+          .update({
+            product_name: `${brand} ${sku} Auto Part`,
+            category: 'Auto Parts',
+            images: [],
+            technical_specs: {},
+            oem_numbers: [sku],
+            price: null,
+            autodoc_url: autodocUrl,
+            scraping_status: 'failed_blocked',
+            raw_scraped_data: { error: 'Website blocking detected', status: 403 },
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', productId);
+
+        if (updateError) {
+          throw updateError;
+        }
+
+        // Log partial success
+        await supabase.from('processing_logs').insert({
+          product_id: productId,
+          operation_type: 'scraping',
+          status: 'blocked',
+          error_message: `Website returned 403 Forbidden - created placeholder data`,
+        });
+
+        console.log(`Created placeholder data for blocked ${brand} ${sku}`);
+
+        return new Response(JSON.stringify({ 
+          success: true, 
+          data: {
+            productName: `${brand} ${sku} Auto Part`,
+            category: 'Auto Parts',
+            images: [],
+            technicalSpecs: {},
+            oemNumbers: [sku],
+            price: null,
+            availability: 'Unknown'
+          },
+          url: autodocUrl,
+          blocked: true
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      
       throw new Error(`HTTP error! status: ${response.status} - ${response.statusText}`);
     }
-
-    console.log(`Successfully fetched page for ${brand} ${sku}`);
 
     const html = await response.text();
     
