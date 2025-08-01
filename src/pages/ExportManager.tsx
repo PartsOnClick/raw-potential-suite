@@ -124,6 +124,11 @@ const ExportManager = () => {
       'External URL',
       'Button text',
       'Position',
+      'EAN Number',
+      'Packing Length (cm)',
+      'Packing Width (cm)', 
+      'Packing Height (cm)',
+      'Fitting Position',
       'Attribute 1 name',
       'Attribute 1 value(s)',
       'Attribute 1 visible',
@@ -137,56 +142,68 @@ const ExportManager = () => {
       'Meta: technical_specs'
     ];
 
-    const rows = selectedProductData.map(product => [
-      'simple', // Type
-      product.sku, // SKU
-      product.product_name, // Name
-      '1', // Published
-      '0', // Featured
-      'visible', // Visibility
-      product.short_description, // Short description
-      product.long_description, // Description
-      '', // Date sale price starts
-      '', // Date sale price ends
-      'taxable', // Tax status
-      '', // Tax class
-      '1', // In stock?
-      '100', // Stock
-      '0', // Backorders allowed?
-      '0', // Sold individually?
-      '1', // Weight (kg) - default value
-      '', // Length
-      '', // Width
-      '', // Height
-      '1', // Allow customer reviews?
-      '', // Purchase note
-      '', // Sale price
-      product.price, // Regular price
-      product.category, // Categories
-      `${product.brand}, auto parts`, // Tags
-      '', // Shipping class
-      includeImages ? product.images?.join(', ') || '' : '', // Images
-      '', // Download limit
-      '', // Download expiry days
-      '', // Parent
-      '', // Grouped products
-      '', // Upsells
-      '', // Cross-sells
-      '', // External URL
-      '', // Button text
-      '0', // Position
-      'Brand', // Attribute 1 name
-      product.brand, // Attribute 1 value(s)
-      '1', // Attribute 1 visible
-      '0', // Attribute 1 global
-      'OEM Numbers', // Attribute 2 name
-      product.oem_numbers?.join(', ') || '', // Attribute 2 value(s)
-      '1', // Attribute 2 visible
-      '0', // Attribute 2 global
-      product.brand, // Meta: brand
-      product.oem_numbers?.join(', ') || '', // Meta: oem_numbers
-      includeSpecs ? JSON.stringify(product.technical_specs || {}) : '' // Meta: technical_specs
-    ]);
+    const rows = selectedProductData.map(product => {
+      // Extract dimensions from technical_specs if available
+      const specs = product.technical_specs || {};
+      const dimensions = specs.dimensions || {};
+      const packingDimensions = specs.packaging || {};
+      
+      return [
+        'simple', // Type
+        product.sku, // SKU
+        product.product_name, // Name
+        '1', // Published
+        '0', // Featured
+        'visible', // Visibility
+        product.short_description, // Short description
+        product.long_description, // Description
+        '', // Date sale price starts
+        '', // Date sale price ends
+        'taxable', // Tax status
+        '', // Tax class
+        '1', // In stock?
+        '100', // Stock
+        '0', // Backorders allowed?
+        '0', // Sold individually?
+        '1', // Weight (kg) - default value
+        dimensions.length || '', // Length
+        dimensions.width || '', // Width
+        dimensions.height || '', // Height
+        '1', // Allow customer reviews?
+        '', // Purchase note
+        '', // Sale price
+        product.price, // Regular price
+        product.category, // Categories
+        `${product.brand}, auto parts`, // Tags
+        '', // Shipping class
+        includeImages ? product.images?.join(', ') || '' : '', // Images
+        '', // Download limit
+        '', // Download expiry days
+        '', // Parent
+        '', // Grouped products
+        '', // Upsells
+        '', // Cross-sells
+        '', // External URL
+        '', // Button text
+        '0', // Position
+        product.ean_number || '', // EAN Number
+        packingDimensions.length || '', // Packing Length
+        packingDimensions.width || '', // Packing Width
+        packingDimensions.height || '', // Packing Height
+        specs.fitting_position || '', // Fitting Position
+        'Brand', // Attribute 1 name
+        product.brand, // Attribute 1 value(s)
+        '1', // Attribute 1 visible
+        '0', // Attribute 1 global
+        'OEM Numbers', // Attribute 2 name
+        product.oem_numbers?.join(', ') || '', // Attribute 2 value(s)
+        '1', // Attribute 2 visible
+        '0', // Attribute 2 global
+        product.brand, // Meta: brand
+        product.oem_numbers?.join(', ') || '', // Meta: oem_numbers
+        includeSpecs ? JSON.stringify(product.technical_specs || {}) : '' // Meta: technical_specs
+      ];
+    });
 
     const csvContent = [headers, ...rows]
       .map(row => row.map(field => `"${String(field).replace(/"/g, '""')}"`).join(','))
