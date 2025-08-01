@@ -28,7 +28,7 @@ const ExportManager = () => {
       const { data: batchData, error: batchError } = await supabase
         .from('import_batches')
         .select('*')
-        .eq('status', 'completed')
+        .in('status', ['completed', 'processing'])
         .order('created_at', { ascending: false });
       
       if (batchError) throw batchError;
@@ -313,7 +313,7 @@ const ExportManager = () => {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                {batches.filter(b => b.status === "completed").map(batch => (
+                {batches.filter(b => b.successfulItems > 0).map(batch => (
                   <div
                     key={batch.id}
                     className={`p-4 border rounded-lg cursor-pointer transition-colors ${
@@ -329,9 +329,18 @@ const ExportManager = () => {
                         <h4 className="font-medium">{batch.name}</h4>
                         <p className="text-sm text-muted-foreground">{formatDate(batch.created_at)}</p>
                       </div>
-                      <Badge variant="secondary">
-                        <CheckCircle className="w-3 h-3 mr-1" />
-                        Complete
+                      <Badge variant={batch.status === 'completed' ? 'secondary' : 'outline'}>
+                        {batch.status === 'completed' ? (
+                          <>
+                            <CheckCircle className="w-3 h-3 mr-1" />
+                            Complete
+                          </>
+                        ) : (
+                          <>
+                            <Clock className="w-3 h-3 mr-1" />
+                            Processing
+                          </>
+                        )}
                       </Badge>
                     </div>
                     <div className="text-sm text-muted-foreground">
