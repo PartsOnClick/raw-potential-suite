@@ -419,35 +419,33 @@ async function getEbayItemDetails(itemId: string, ebayConfig?: any) {
   const xmlText = await response.text();
   
   try {
-    // Parse XML response (simplified parsing)
-    const parser = new DOMParser();
-    const xmlDoc = parser.parseFromString(xmlText, 'text/xml');
-    
-    // Check for errors
-    const errors = xmlDoc.getElementsByTagName('Errors');
-    if (errors.length > 0) {
-      const errorMsg = xmlDoc.getElementsByTagName('LongMessage')[0]?.textContent;
+    // Parse XML response using regex-based parsing for Deno
+    // Check for errors first
+    const errorMatch = xmlText.match(/<Errors>[\s\S]*?<\/Errors>/);
+    if (errorMatch) {
+      const longMessageMatch = xmlText.match(/<LongMessage[^>]*>(.*?)<\/LongMessage>/);
+      const errorMsg = longMessageMatch ? longMessageMatch[1] : 'Unknown eBay API error';
       return { error: `eBay API Error: ${errorMsg}` };
     }
 
-    // Extract relevant data
-    const item = xmlDoc.getElementsByTagName('Item')[0];
-    if (!item) {
+    // Check if item exists
+    const itemMatch = xmlText.match(/<Item>[\s\S]*?<\/Item>/);
+    if (!itemMatch) {
       return { error: 'No item data found' };
     }
 
     return {
-      title: getXmlValue(xmlDoc, 'Title'),
-      description: getXmlValue(xmlDoc, 'Description'),
-      condition: getXmlValue(xmlDoc, 'ConditionDisplayName'),
-      price: getXmlValue(xmlDoc, 'CurrentPrice'),
-      currency: getXmlValue(xmlDoc, 'CurrencyID'),
-      itemSpecifics: extractItemSpecifics(xmlDoc),
-      compatibility: extractCompatibility(xmlDoc),
-      images: extractImages(xmlDoc),
+      title: extractXmlValue(xmlText, 'Title'),
+      description: extractXmlValue(xmlText, 'Description'),
+      condition: extractXmlValue(xmlText, 'ConditionDisplayName'),
+      price: extractXmlValue(xmlText, 'CurrentPrice'),
+      currency: extractXmlValue(xmlText, 'CurrencyID'),
+      itemSpecifics: extractItemSpecificsFromXml(xmlText),
+      compatibility: [], // Simplified for now
+      images: extractImagesFromXml(xmlText),
       seller: {
-        username: getXmlValue(xmlDoc, 'UserID'),
-        feedback: getXmlValue(xmlDoc, 'FeedbackScore')
+        username: extractXmlValue(xmlText, 'UserID'),
+        feedback: extractXmlValue(xmlText, 'FeedbackScore')
       }
     };
 
@@ -457,40 +455,46 @@ async function getEbayItemDetails(itemId: string, ebayConfig?: any) {
   }
 }
 
-function getXmlValue(doc: Document, tagName: string): string {
-  const element = doc.getElementsByTagName(tagName)[0];
-  return element?.textContent || '';
+// Regex-based XML parsing functions for Deno compatibility
+function extractXmlValue(xmlText: string, tagName: string): string {
+  const regex = new RegExp(`<${tagName}[^>]*>(.*?)<\/${tagName}>`, 'i');
+  const match = xmlText.match(regex);
+  return match ? match[1].trim() : '';
 }
 
-function extractItemSpecifics(doc: Document) {
+function extractItemSpecificsFromXml(xmlText: string): Record<string, string> {
   const specifics: Record<string, string> = {};
-  const nameValueList = doc.getElementsByTagName('NameValueList');
   
-  for (let i = 0; i < nameValueList.length; i++) {
-    const name = nameValueList[i].getElementsByTagName('Name')[0]?.textContent;
-    const value = nameValueList[i].getElementsByTagName('Value')[0]?.textContent;
-    if (name && value) {
-      specifics[name] = value;
+  // Find all NameValueList entries
+  const nameValueListRegex = /<NameValueList>[\s\S]*?<\/NameValueList>/g;
+  const nameValueMatches = xmlText.match(nameValueListRegex) || [];
+  
+  nameValueMatches.forEach(nvl => {
+    const nameMatch = nvl.match(/<Name[^>]*>(.*?)<\/Name>/i);
+    const valueMatch = nvl.match(/<Value[^>]*>(.*?)<\/Value>/i);
+    
+    if (nameMatch && valueMatch) {
+      const name = nameMatch[1].trim();
+      const value = valueMatch[1].trim();
+      if (name && value) {
+        specifics[name] = value;
+      }
     }
-  }
+  });
   
   return specifics;
 }
 
-function extractCompatibility(doc: Document) {
-  // Extract vehicle compatibility data
-  const compatibility: any[] = [];
-  // Implementation would parse compatibility data from XML
-  return compatibility;
-}
-
-function extractImages(doc: Document) {
+function extractImagesFromXml(xmlText: string): string[] {
   const images: string[] = [];
-  const pictureURLs = doc.getElementsByTagName('PictureURL');
+  const pictureURLRegex = /<PictureURL[^>]*>(.*?)<\/PictureURL>/g;
+  let match;
   
-  for (let i = 0; i < pictureURLs.length; i++) {
-    const url = pictureURLs[i].textContent;
-    if (url) images.push(url);
+  while ((match = pictureURLRegex.exec(xmlText)) !== null) {
+    const url = match[1].trim();
+    if (url) {
+      images.push(url);
+    }
   }
   
   return images;
