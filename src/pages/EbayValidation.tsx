@@ -142,12 +142,7 @@ const EbayValidation = () => {
       // Test 1: Basic connection and credentials validation
       console.log("Testing eBay API connection...");
       
-      let accessToken = '';
-      
       if (useCustomConfig && ebayConfig) {
-        // Use custom config
-        accessToken = ebayConfig.access_token;
-        
         // Check if token is expired
         if (ebayConfig.token_expires_at && ebayConfig.token_expires_at < Date.now() / 1000) {
           results.connection = {
@@ -155,91 +150,102 @@ const EbayValidation = () => {
             message: "❌ Access token has expired",
             error: `Token expired at ${new Date(ebayConfig.token_expires_at * 1000).toLocaleString()}`
           };
+        } else {
+          results.connection = {
+            success: true,
+            message: "✅ Custom eBay configuration loaded successfully",
+          };
         }
       } else {
-        // Try to get token from Supabase secrets (fallback)
+        // Test using Supabase edge function (server-side test)
         try {
-          accessToken = await getEbayAccessToken();
+          const { data, error } = await supabase.functions.invoke('ebay-search', {
+            body: {
+              action: 'test_connection',
+              productId: 'test-validation-connection',
+              brand: 'test',
+              sku: 'validation',
+              oeNumber: '12345'
+            }
+          });
+
+          if (error) {
+            results.connection = {
+              success: false,
+              message: "❌ eBay API connection failed",
+              error: error.message
+            };
+          } else {
+            results.connection = {
+              success: true,
+              message: "✅ eBay API connection successful",
+            };
+          }
         } catch (error) {
           results.connection = {
             success: false,
-            message: "❌ Failed to get access token from Supabase",
+            message: "❌ Failed to test eBay connection",
             error: error instanceof Error ? error.message : 'Unknown error'
           };
         }
       }
 
-      if (accessToken && !results.connection) {
-        // Make a simple search call to test connectivity
-        const searchResponse = await fetch('https://api.ebay.com/buy/browse/v1/item_summary/search?q=test&category_ids=6030&limit=1', {
-          headers: {
-            'Authorization': `Bearer ${accessToken}`,
-            'X-EBAY-C-MARKETPLACE-ID': 'EBAY_GB'
-          }
-        });
-
-        if (searchResponse.ok) {
-          results.connection = {
-            success: true,
-            message: "✅ eBay API connection successful",
-          };
-        } else {
-          const errorText = await searchResponse.text();
-          results.connection = {
-            success: false,
-            message: "❌ eBay API connection failed",
-            error: `HTTP ${searchResponse.status}: ${errorText}`
-          };
-        }
-      }
-
-      // Test 2: Search functionality
-      if (results.connection?.success && accessToken) {
+      // Test 2: Search functionality using edge function
+      if (results.connection?.success) {
         console.log(`Testing search with query: ${testQuery}`);
         
-        const searchTestResponse = await fetch(`https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent(testQuery)}&category_ids=6030&limit=5`, {
-          headers: {
-            'Authorization': `Bearer ${accessToken}`,
-            'X-EBAY-C-MARKETPLACE-ID': 'EBAY_GB'
-          }
-        });
+        try {
+          // Use edge function for search test (works server-side, no CORS issues)
+          const { data, error } = await supabase.functions.invoke('ebay-search', {
+            body: {
+              action: 'test_search',
+              productId: 'test-validation-search',
+              brand: testQuery.split(' ')[0] || 'test',
+              sku: testQuery.split(' ')[1] || 'search',
+              oeNumber: testQuery.split(' ')[2] || '12345',
+              testQuery: testQuery
+            }
+          });
 
-        if (searchTestResponse.ok) {
-          const searchData = await searchTestResponse.json();
-          results.search = {
-            success: true,
-            message: `✅ Search successful - Found ${searchData.total || 0} items`,
-            data: searchData
-          };
+          if (error) {
+            results.search = {
+              success: false,
+              message: "❌ Search test failed",
+              error: error.message
+            };
+          } else {
+            results.search = {
+              success: true,
+              message: `✅ Search successful - Found ${data.resultsFound || 0} items`,
+              data: data
+            };
 
-          // Set test item ID from search results
-          if (searchData.itemSummaries && searchData.itemSummaries.length > 0) {
-            const firstItem = searchData.itemSummaries[0];
-            const itemId = firstItem.itemId?.replace('v1|', '').split('|')[0];
-            setTestItemId(itemId);
+            // Set test item ID from search results if available
+            if (data.ebayItemId) {
+              setTestItemId(data.ebayItemId);
+            }
           }
-        } else {
-          const errorText = await searchTestResponse.text();
+        } catch (err) {
           results.search = {
             success: false,
             message: "❌ Search test failed",
-            error: `HTTP ${searchTestResponse.status}: ${errorText}`
+            error: err instanceof Error ? err.message : 'Unknown error'
           };
         }
       }
 
-      // Test 3: Item details (if we have an item ID)
-      if (results.search?.success && testItemId) {
-        console.log(`Testing item details for: ${testItemId}`);
+      // Test 3: Item details (using edge function)
+      if (results.search?.success) {
+        console.log(`Testing item details functionality`);
         
         try {
           // Test our edge function's item details capability
           const { data, error } = await supabase.functions.invoke('ebay-search', {
             body: {
-              productId: 'test-validation',
-              brand: 'test',
-              sku: 'validation',
-              oeNumber: '12345'
+              productId: 'test-validation-details',
+              brand: testQuery.split(' ')[0] || 'BMW',
+              sku: testQuery.split(' ')[1] || 'filter',
+              oeNumber: '13717521023'
             }
           });
 
