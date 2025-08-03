@@ -8,7 +8,8 @@ import {
   Cog, 
   FileText, 
   History, 
-  TrendingUp 
+  TrendingUp,
+  Shield
 } from "lucide-react";
 
 const Navigation = () => {
@@ -20,6 +21,7 @@ const Navigation = () => {
     { to: "/status", label: "Status", icon: Activity },
     { to: "/products", label: "Products", icon: Cog },
     { to: "/export", label: "Export", icon: FileText },
+    { to: "/ebay-validation", label: "eBay Test", icon: Shield },
     { to: "/history", label: "History", icon: History },
     { to: "/analytics", label: "Analytics", icon: TrendingUp },
   ];
