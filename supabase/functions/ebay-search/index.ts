@@ -31,6 +31,14 @@ serve(async (req) => {
     const { productId, brand, sku, oeNumber } = await req.json();
     
     console.log(`[eBay Search] Starting search for product ${productId}: Brand=${brand}, SKU=${sku}, OE=${oeNumber}`);
+    
+    // Validate eBay API configuration
+    if (!EBAY_CONFIG.client_id || !EBAY_CONFIG.access_token) {
+      console.error('[eBay Search] Missing eBay API configuration');
+      throw new Error('eBay API configuration incomplete');
+    }
+    
+    console.log(`[eBay Search] eBay API Config valid: Client ID=${EBAY_CONFIG.client_id ? 'Present' : 'Missing'}, Access Token=${EBAY_CONFIG.access_token ? 'Present' : 'Missing'}`);
 
     // Log the start of eBay processing
     await supabase.from('processing_logs').insert({
@@ -188,22 +196,31 @@ async function searchEbayItems(query: string) {
     "Accept-Language": "en-US,en;q=0.9"
   };
 
+  console.log(`[eBay Search] Making API call to: ${url}`);
+  
   const response = await fetch(url, {
     method: 'GET',
     headers: headers
   });
 
+  console.log(`[eBay Search] API Response Status: ${response.status}`);
+
   if (response.status !== 200) {
-    console.error(`[eBay Search] Search API returned HTTP ${response.status}`);
-    return { error: `Search API returned HTTP ${response.status}` };
+    const errorText = await response.text();
+    console.error(`[eBay Search] Search API error - Status: ${response.status}, Body: ${errorText}`);
+    return { error: `Search API returned HTTP ${response.status}: ${errorText}` };
   }
 
   const data = await response.json();
   
+  console.log(`[eBay Search] Raw API response received, items found: ${data.itemSummaries?.length || 0}`);
+  
   // Filter English listings only
   if (data.itemSummaries) {
+    const originalCount = data.itemSummaries.length;
     data.itemSummaries = filterEnglishListings(data.itemSummaries);
     data.total = data.itemSummaries.length;
+    console.log(`[eBay Search] After English filtering: ${data.itemSummaries.length} items (filtered out ${originalCount - data.itemSummaries.length})`);
   }
 
   return data;

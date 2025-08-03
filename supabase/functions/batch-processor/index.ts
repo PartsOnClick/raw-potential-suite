@@ -64,37 +64,49 @@ serve(async (req) => {
       try {
         console.log(`Processing product ${product.id} - ${product.brand} ${product.sku}`);
         
-        // Step 1: eBay Search (primary data source)
+        // Step 1: eBay Search (ONLY data source - no Google)
+        console.log(`[Batch] Starting eBay search for ${product.brand} ${product.sku} (${product.oe_number})`);
+        
         try {
+          const ebaySearchBody = {
+            productId: product.id,
+            brand: product.brand,
+            sku: product.sku,
+            oeNumber: product.oe_number,
+          };
+          
+          console.log(`[Batch] eBay search request:`, ebaySearchBody);
+          
           const { data: searchResult, error: searchError } = await supabaseAdmin.functions.invoke(
             'ebay-search',
-            {
-              body: {
-                productId: product.id,
-                brand: product.brand,
-                sku: product.sku,
-                oeNumber: product.oe_number,
-              },
-            }
+            { body: ebaySearchBody }
           );
 
           if (searchError) {
-            console.error(`eBay search failed for ${product.brand} ${product.sku}:`, searchError);
+            console.error(`[Batch] eBay search failed for ${product.brand} ${product.sku}:`, JSON.stringify(searchError));
+            throw new Error(`eBay search failed: ${searchError.message || JSON.stringify(searchError)}`);
           } else {
-            console.log(`eBay search completed for ${product.brand} ${product.sku}`);
+            console.log(`[Batch] eBay search completed successfully for ${product.brand} ${product.sku}:`, searchResult);
           }
         } catch (searchErr) {
-          console.error(`eBay search error for ${product.brand} ${product.sku}:`, searchErr);
+          console.error(`[Batch] eBay search error for ${product.brand} ${product.sku}:`, searchErr);
+          throw new Error(`eBay search error: ${searchErr.message}`);
         }
 
-        // Wait for eBay data processing to complete
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        // Wait for eBay data processing to complete and fetch updated product
+        console.log(`[Batch] Waiting for eBay data processing to complete...`);
+        await new Promise(resolve => setTimeout(resolve, 3000));
         
-        const { data: updatedProduct } = await supabaseAdmin
+        const { data: updatedProduct, error: fetchError } = await supabaseAdmin
           .from('products')
           .select('*')
           .eq('id', product.id)
           .single();
+        
+        if (fetchError) {
+          console.error(`[Batch] Error fetching updated product:`, fetchError);
+          throw new Error(`Failed to fetch updated product: ${fetchError.message}`);
+        }
 
         // Check if eBay data was found
         const hasEbayData = updatedProduct && (
@@ -103,37 +115,47 @@ serve(async (req) => {
           updatedProduct.part_number_tags?.length > 0
         );
 
-        console.log(`Product ${product.id} has eBay data: ${hasEbayData}`);
+        console.log(`[Batch] Product ${product.id} has eBay data: ${hasEbayData}`);
+        console.log(`[Batch] eBay item ID: ${updatedProduct?.ebay_item_id || 'none'}`);
+        console.log(`[Batch] Part number tags: ${updatedProduct?.part_number_tags?.length || 0} tags`);
+        console.log(`[Batch] Scraping status: ${updatedProduct?.scraping_status}`);
+        
+        if (!hasEbayData) {
+          console.warn(`[Batch] No eBay data found for ${product.brand} ${product.sku}. Will proceed with title-only content generation.`);
+        }
 
         // Step 2: Generate AI content (SEO title, descriptions, meta) sequentially
+        console.log(`[Batch] Starting AI content generation for ${product.brand} ${product.sku}`);
         const contentTypes = ['seo_title', 'short_description', 'long_description', 'meta_description'];
         
         for (const contentType of contentTypes) {
           try {
+            console.log(`[Batch] Generating ${contentType} for ${product.brand} ${product.sku}`);
+            
+            const contentBody = {
+              productId: product.id,
+              contentType: contentType,
+              productData: updatedProduct || product,
+              hasEbayData: hasEbayData,
+            };
+            
             const { data: contentResult, error: contentError } = await supabaseAdmin.functions.invoke(
               'deepseek-content-generator',
-              {
-                body: {
-                  productId: product.id,
-                  contentType: contentType,
-                  productData: updatedProduct || product,
-                  hasEbayData: hasEbayData,
-                },
-              }
+              { body: contentBody }
             );
 
             if (contentError) {
-              console.error(`Content generation failed for ${contentType}:`, contentError);
-              errors.push(`${product.brand} ${product.sku} - ${contentType}: ${contentError.message}`);
+              console.error(`[Batch] Content generation failed for ${contentType}:`, JSON.stringify(contentError));
+              errors.push(`${product.brand} ${product.sku} - ${contentType}: ${contentError.message || JSON.stringify(contentError)}`);
             } else {
-              console.log(`Successfully generated ${contentType} for ${product.brand} ${product.sku}`);
+              console.log(`[Batch] Successfully generated ${contentType} for ${product.brand} ${product.sku}:`, contentResult);
             }
 
             // Small delay between content generation calls
-            await new Promise(resolve => setTimeout(resolve, 500));
+            await new Promise(resolve => setTimeout(resolve, 1000));
             
           } catch (error) {
-            console.error(`Error generating ${contentType}:`, error);
+            console.error(`[Batch] Error generating ${contentType}:`, error);
             errors.push(`${product.brand} ${product.sku} - ${contentType}: ${error.message}`);
           }
         }
