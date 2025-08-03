@@ -10,6 +10,7 @@ import ProcessingStatus from "./pages/ProcessingStatus";
 import ProductReview from "./pages/ProductReview";
 import ExportManager from "./pages/ExportManager";
 import EbayValidation from "./pages/EbayValidation";
+import EbayTokenManager from "./pages/EbayTokenManager";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -28,6 +29,7 @@ const App = () => (
           <Route path="/products" element={<ProductReview />} />
           <Route path="/export" element={<ExportManager />} />
           <Route path="/ebay-validation" element={<EbayValidation />} />
+          <Route path="/ebay-tokens" element={<EbayTokenManager />} />
           <Route path="/history" element={<div className="p-8 text-center">History page coming soon...</div>} />
           <Route path="/analytics" element={<div className="p-8 text-center">Analytics page coming soon...</div>} />
           <Route path="*" element={<NotFound />} />

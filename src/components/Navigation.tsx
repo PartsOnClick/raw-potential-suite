@@ -9,7 +9,8 @@ import {
   FileText, 
   History, 
   TrendingUp,
-  Shield
+  Shield,
+  Key
 } from "lucide-react";
 
 const Navigation = () => {
@@ -22,6 +23,7 @@ const Navigation = () => {
     { to: "/products", label: "Products", icon: Cog },
     { to: "/export", label: "Export", icon: FileText },
     { to: "/ebay-validation", label: "eBay Test", icon: Shield },
+    { to: "/ebay-tokens", label: "eBay Tokens", icon: Key },
     { to: "/history", label: "History", icon: History },
     { to: "/analytics", label: "Analytics", icon: TrendingUp },
   ];

@@ -55,6 +55,48 @@ export type Database = {
           },
         ]
       }
+      ebay_tokens: {
+        Row: {
+          access_token: string
+          client_id: string
+          client_secret: string
+          created_at: string | null
+          dev_id: string
+          id: string
+          is_active: boolean | null
+          refresh_token: string
+          sandbox_mode: boolean | null
+          token_expires_at: string
+          updated_at: string | null
+        }
+        Insert: {
+          access_token: string
+          client_id: string
+          client_secret: string
+          created_at?: string | null
+          dev_id: string
+          id?: string
+          is_active?: boolean | null
+          refresh_token: string
+          sandbox_mode?: boolean | null
+          token_expires_at: string
+          updated_at?: string | null
+        }
+        Update: {
+          access_token?: string
+          client_id?: string
+          client_secret?: string
+          created_at?: string | null
+          dev_id?: string
+          id?: string
+          is_active?: boolean | null
+          refresh_token?: string
+          sandbox_mode?: boolean | null
+          token_expires_at?: string
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       import_batches: {
         Row: {
           completed_at: string | null

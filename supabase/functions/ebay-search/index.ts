@@ -12,15 +12,47 @@ const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
 const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-// eBay API Configuration
-const EBAY_CONFIG = {
-  client_id: Deno.env.get('EBAY_CLIENT_ID')!,
-  client_secret: Deno.env.get('EBAY_CLIENT_SECRET')!,
-  dev_id: Deno.env.get('EBAY_DEV_ID')!,
-  access_token: Deno.env.get('EBAY_ACCESS_TOKEN')!,
-  refresh_token: Deno.env.get('EBAY_REFRESH_TOKEN')!,
-  sandbox_mode: false
-};
+// Get eBay configuration from database or environment
+async function getEbayConfig() {
+  try {
+    // Try to get active token from database first
+    const { data: tokenData, error } = await supabase
+      .from('ebay_tokens')
+      .select('*')
+      .eq('is_active', true)
+      .single();
+
+    if (tokenData && !error) {
+      // Check if token is not expired (with 5-minute buffer)
+      const expiresAt = new Date(tokenData.token_expires_at);
+      const now = new Date();
+      const fiveMinutesFromNow = new Date(now.getTime() + 5 * 60 * 1000);
+
+      if (expiresAt > fiveMinutesFromNow) {
+        return {
+          client_id: tokenData.client_id,
+          client_secret: tokenData.client_secret,
+          dev_id: tokenData.dev_id,
+          access_token: tokenData.access_token,
+          refresh_token: tokenData.refresh_token,
+          sandbox_mode: tokenData.sandbox_mode || false
+        };
+      }
+    }
+  } catch (dbError) {
+    console.warn('[eBay Config] Database token fetch failed, falling back to environment:', dbError);
+  }
+
+  // Fallback to environment variables
+  return {
+    client_id: Deno.env.get('EBAY_CLIENT_ID')!,
+    client_secret: Deno.env.get('EBAY_CLIENT_SECRET')!,
+    dev_id: Deno.env.get('EBAY_DEV_ID')!,
+    access_token: Deno.env.get('EBAY_ACCESS_TOKEN')!,
+    refresh_token: Deno.env.get('EBAY_REFRESH_TOKEN')!,
+    sandbox_mode: false
+  };
+}
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -35,10 +67,13 @@ serve(async (req) => {
     // Check if this is a test/validation call
     const isTestCall = action && (action.includes('test') || productId?.includes('test-validation'));
     
+    // Get eBay configuration
+    const EBAY_CONFIG = await getEbayConfig();
+    
     // Validate eBay API configuration
     if (!EBAY_CONFIG.client_id || !EBAY_CONFIG.access_token) {
       console.error('[eBay Search] Missing eBay API configuration');
-      throw new Error('eBay API configuration incomplete');
+      throw new Error('eBay API configuration incomplete - please check your eBay tokens');
     }
     
     console.log(`[eBay Search] eBay API Config valid: Client ID=${EBAY_CONFIG.client_id ? 'Present' : 'Missing'}, Access Token=${EBAY_CONFIG.access_token ? 'Present' : 'Missing'}`);
@@ -59,7 +94,7 @@ serve(async (req) => {
     // For test calls with custom query, use that directly
     if (isTestCall && testQuery) {
       console.log(`[eBay Search] Test mode - using query: ${testQuery}`);
-      searchResults = await searchEbayItems(testQuery);
+      searchResults = await searchEbayItems(testQuery, EBAY_CONFIG);
       if (searchResults?.itemSummaries?.length > 0) {
         searchStrategy = 'test_query';
         console.log(`[eBay Search] Test found ${searchResults.itemSummaries.length} items`);
@@ -68,7 +103,7 @@ serve(async (req) => {
     // Strategy 1: Brand + SKU
     else if (brand && sku) {
       console.log(`[eBay Search] Trying Brand + SKU: ${brand} ${sku}`);
-      searchResults = await searchEbayItems(`${brand} ${sku}`);
+      searchResults = await searchEbayItems(`${brand} ${sku}`, EBAY_CONFIG);
       if (searchResults?.itemSummaries?.length > 0) {
         searchStrategy = 'brand_sku';
         console.log(`[eBay Search] Found ${searchResults.itemSummaries.length} items with Brand + SKU`);
@@ -78,7 +113,7 @@ serve(async (req) => {
     // Strategy 2: Brand + OE Number (if Strategy 1 failed)
     if (!searchResults?.itemSummaries?.length && brand && oeNumber) {
       console.log(`[eBay Search] Trying Brand + OE Number: ${brand} ${oeNumber}`);
-      searchResults = await searchEbayItems(`${brand} ${oeNumber}`);
+      searchResults = await searchEbayItems(`${brand} ${oeNumber}`, EBAY_CONFIG);
       if (searchResults?.itemSummaries?.length > 0) {
         searchStrategy = 'brand_oe';
         console.log(`[eBay Search] Found ${searchResults.itemSummaries.length} items with Brand + OE`);
@@ -88,7 +123,7 @@ serve(async (req) => {
     // Strategy 3: OE Number only (if previous strategies failed)
     if (!searchResults?.itemSummaries?.length && oeNumber) {
       console.log(`[eBay Search] Trying OE Number only: ${oeNumber}`);
-      searchResults = await searchEbayItems(oeNumber);
+      searchResults = await searchEbayItems(oeNumber, EBAY_CONFIG);
       if (searchResults?.itemSummaries?.length > 0) {
         searchStrategy = 'oe_only';
         console.log(`[eBay Search] Found ${searchResults.itemSummaries.length} items with OE only`);
@@ -107,7 +142,7 @@ serve(async (req) => {
       console.log(`[eBay Search] Selected best item: ${ebayItemId}`);
 
       // Get detailed item information
-      const itemDetails = await getEbayItemDetails(ebayItemId);
+      const itemDetails = await getEbayItemDetails(ebayItemId, EBAY_CONFIG);
       
       if (itemDetails && !itemDetails.error) {
         ebayData = {
@@ -196,8 +231,11 @@ serve(async (req) => {
   }
 });
 
-async function searchEbayItems(query: string) {
+async function searchEbayItems(query: string, ebayConfig?: any) {
   const endpoint = "https://api.ebay.com/buy/browse/v1/item_summary/search";
+  
+  // Get config if not provided
+  const config = ebayConfig || await getEbayConfig();
   
   const params = new URLSearchParams({
     q: query,
@@ -210,7 +248,7 @@ async function searchEbayItems(query: string) {
   const url = `${endpoint}?${params}`;
   
   const headers = {
-    "Authorization": `Bearer ${EBAY_CONFIG.access_token}`,
+    "Authorization": `Bearer ${config.access_token}`,
     "Content-Type": "application/json",
     "X-EBAY-C-MARKETPLACE-ID": "EBAY_US",
     "Accept-Language": "en-US,en;q=0.9"
@@ -228,6 +266,16 @@ async function searchEbayItems(query: string) {
   if (response.status !== 200) {
     const errorText = await response.text();
     console.error(`[eBay Search] Search API error - Status: ${response.status}, Body: ${errorText}`);
+    
+    // Check if it's an authentication error (401)
+    if (response.status === 401) {
+      return { 
+        error: 'eBay authentication failed - access token may be expired. Please update your eBay credentials.',
+        authError: true,
+        status: 401
+      };
+    }
+    
     return { error: `Search API returned HTTP ${response.status}: ${errorText}` };
   }
 
@@ -329,23 +377,26 @@ function extractItemId(fullItemId: string) {
   return parts.length > 1 ? parts[1] : fullItemId;
 }
 
-async function getEbayItemDetails(itemId: string) {
+async function getEbayItemDetails(itemId: string, ebayConfig?: any) {
   const endpoint = "https://api.ebay.com/ws/api.dll";
+  
+  // Get config if not provided
+  const config = ebayConfig || await getEbayConfig();
   
   const headers = {
     'Content-Type': 'text/xml',
     'X-EBAY-API-CALL-NAME': 'GetItem',
     'X-EBAY-API-SITEID': '0',
-    'X-EBAY-API-DEV-NAME': EBAY_CONFIG.dev_id,
-    'X-EBAY-API-APP-NAME': EBAY_CONFIG.client_id,
-    'X-EBAY-API-CERT-NAME': EBAY_CONFIG.client_secret,
+    'X-EBAY-API-DEV-NAME': config.dev_id,
+    'X-EBAY-API-APP-NAME': config.client_id,
+    'X-EBAY-API-CERT-NAME': config.client_secret,
     'X-EBAY-API-COMPATIBILITY-LEVEL': '967'
   };
   
   const requestXml = `<?xml version="1.0" encoding="utf-8"?>
     <GetItemRequest xmlns="urn:ebay:apis:eBLBaseComponents">
       <RequesterCredentials>
-        <eBayAuthToken>${EBAY_CONFIG.access_token}</eBayAuthToken>
+        <eBayAuthToken>${config.access_token}</eBayAuthToken>
       </RequesterCredentials>
       <ErrorLanguage>en_US</ErrorLanguage>
       <WarningLevel>High</WarningLevel>
