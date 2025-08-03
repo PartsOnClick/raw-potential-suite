@@ -28,9 +28,12 @@ serve(async (req) => {
   }
 
   try {
-    const { productId, brand, sku, oeNumber } = await req.json();
+    const { productId, brand, sku, oeNumber, action, testQuery } = await req.json();
     
     console.log(`[eBay Search] Starting search for product ${productId}: Brand=${brand}, SKU=${sku}, OE=${oeNumber}`);
+    
+    // Check if this is a test/validation call
+    const isTestCall = action && (action.includes('test') || productId?.includes('test-validation'));
     
     // Validate eBay API configuration
     if (!EBAY_CONFIG.client_id || !EBAY_CONFIG.access_token) {
@@ -40,19 +43,30 @@ serve(async (req) => {
     
     console.log(`[eBay Search] eBay API Config valid: Client ID=${EBAY_CONFIG.client_id ? 'Present' : 'Missing'}, Access Token=${EBAY_CONFIG.access_token ? 'Present' : 'Missing'}`);
 
-    // Log the start of eBay processing
-    await supabase.from('processing_logs').insert({
-      product_id: productId,
-      operation_type: 'ebay_search',
-      status: 'started',
-      operation_details: { brand, sku, oeNumber }
-    });
+    // Log the start of eBay processing (only for real products, not test calls)
+    if (!isTestCall) {
+      await supabase.from('processing_logs').insert({
+        product_id: productId,
+        operation_type: 'ebay_search',
+        status: 'started',
+        operation_details: { brand, sku, oeNumber }
+      });
+    }
 
     let searchResults = null;
     let searchStrategy = '';
 
+    // For test calls with custom query, use that directly
+    if (isTestCall && testQuery) {
+      console.log(`[eBay Search] Test mode - using query: ${testQuery}`);
+      searchResults = await searchEbayItems(testQuery);
+      if (searchResults?.itemSummaries?.length > 0) {
+        searchStrategy = 'test_query';
+        console.log(`[eBay Search] Test found ${searchResults.itemSummaries.length} items`);
+      }
+    }
     // Strategy 1: Brand + SKU
-    if (brand && sku) {
+    else if (brand && sku) {
       console.log(`[eBay Search] Trying Brand + SKU: ${brand} ${sku}`);
       searchResults = await searchEbayItems(`${brand} ${sku}`);
       if (searchResults?.itemSummaries?.length > 0) {
@@ -110,37 +124,41 @@ serve(async (req) => {
       }
     }
 
-    // Update product with eBay data
-    const updateData: any = {
-      scraping_status: searchResults?.itemSummaries?.length > 0 ? 'completed' : 'no_results',
-      ebay_item_id: ebayItemId,
-      ebay_data: ebayData,
-      part_number_tags: partNumberTags,
-      updated_at: new Date().toISOString()
-    };
+    // Update product with eBay data (only for real products, not test calls)
+    if (!isTestCall) {
+      const updateData: any = {
+        scraping_status: searchResults?.itemSummaries?.length > 0 ? 'completed' : 'no_results',
+        ebay_item_id: ebayItemId,
+        ebay_data: ebayData,
+        part_number_tags: partNumberTags,
+        updated_at: new Date().toISOString()
+      };
 
-    const { error: updateError } = await supabase
-      .from('products')
-      .update(updateData)
-      .eq('id', productId);
+      const { error: updateError } = await supabase
+        .from('products')
+        .update(updateData)
+        .eq('id', productId);
 
-    if (updateError) {
-      console.error('[eBay Search] Error updating product:', updateError);
-      throw updateError;
+      if (updateError) {
+        console.error('[eBay Search] Error updating product:', updateError);
+        throw updateError;
+      }
     }
 
-    // Log success
-    await supabase.from('processing_logs').insert({
-      product_id: productId,
-      operation_type: 'ebay_search',
-      status: 'completed',
-      operation_details: { 
-        searchStrategy, 
-        resultsFound: searchResults?.itemSummaries?.length || 0,
-        ebayItemId,
-        partNumberTagsCount: partNumberTags.length
-      }
-    });
+    // Log success (only for real products, not test calls)
+    if (!isTestCall) {
+      await supabase.from('processing_logs').insert({
+        product_id: productId,
+        operation_type: 'ebay_search',
+        status: 'completed',
+        operation_details: { 
+          searchStrategy, 
+          resultsFound: searchResults?.itemSummaries?.length || 0,
+          ebayItemId,
+          partNumberTagsCount: partNumberTags.length
+        }
+      });
+    }
 
     console.log(`[eBay Search] Completed for product ${productId}`);
     
@@ -157,9 +175,11 @@ serve(async (req) => {
   } catch (error) {
     console.error('[eBay Search] Error:', error);
     
-    // Log error
-    const { productId } = await req.json().catch(() => ({}));
-    if (productId) {
+    // Log error (only for real products, not test calls)
+    const { productId, action } = await req.json().catch(() => ({}));
+    const isTestCall = action && (action.includes('test') || productId?.includes('test-validation'));
+    
+    if (productId && !isTestCall) {
       await supabase.from('processing_logs').insert({
         product_id: productId,
         operation_type: 'ebay_search',
