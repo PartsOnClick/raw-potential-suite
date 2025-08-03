@@ -5,9 +5,19 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { AlertCircle, CheckCircle, Loader2, Search, Info } from "lucide-react";
+import { AlertCircle, CheckCircle, Loader2, Search, Info, Upload, Copy } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+
+interface EbayConfig {
+  client_id: string;
+  client_secret: string;
+  dev_id: string;
+  access_token: string;
+  refresh_token: string;
+  token_expires_at?: number;
+  sandbox_mode?: boolean;
+}
 
 interface TestResult {
   success: boolean;
@@ -25,7 +35,100 @@ const EbayValidation = () => {
   }>({ connection: null, search: null, itemDetails: null });
   const [testQuery, setTestQuery] = useState("bmw air filter");
   const [testItemId, setTestItemId] = useState("");
+  const [configInput, setConfigInput] = useState("");
+  const [ebayConfig, setEbayConfig] = useState<EbayConfig | null>(null);
+  const [useCustomConfig, setUseCustomConfig] = useState(false);
   const { toast } = useToast();
+
+  const parseEbayConfig = () => {
+    try {
+      // Try to parse as JSON first
+      let config: EbayConfig;
+      
+      if (configInput.trim().startsWith('{')) {
+        config = JSON.parse(configInput);
+      } else {
+        // Parse PHP-style config
+        const lines = configInput.split('\n');
+        config = {} as EbayConfig;
+        
+        lines.forEach(line => {
+          const trimmed = line.trim();
+          if (trimmed.includes('=>')) {
+            const [key, value] = trimmed.split('=>').map(s => s.trim());
+            const cleanKey = key.replace(/['"`]/g, '');
+            const cleanValue = value.replace(/[,'"`]/g, '');
+            
+            switch (cleanKey) {
+              case 'client_id':
+                config.client_id = cleanValue;
+                break;
+              case 'client_secret':
+                config.client_secret = cleanValue;
+                break;
+              case 'dev_id':
+                config.dev_id = cleanValue;
+                break;
+              case 'access_token':
+                config.access_token = cleanValue;
+                break;
+              case 'refresh_token':
+                config.refresh_token = cleanValue;
+                break;
+              case 'token_expires_at':
+                config.token_expires_at = parseInt(cleanValue);
+                break;
+              case 'sandbox_mode':
+                config.sandbox_mode = cleanValue === 'true';
+                break;
+            }
+          } else if (trimmed.includes(':')) {
+            // Handle key-value pairs separated by colon
+            const [key, value] = trimmed.split(':').map(s => s.trim());
+            const cleanKey = key.toLowerCase().replace(/\s+/g, '_');
+            const cleanValue = value.replace(/[,'"`]/g, '');
+            
+            switch (cleanKey) {
+              case 'client_id':
+                config.client_id = cleanValue;
+                break;
+              case 'client_secret':
+                config.client_secret = cleanValue;
+                break;
+              case 'dev_id':
+                config.dev_id = cleanValue;
+                break;
+              case 'access_token':
+                config.access_token = cleanValue;
+                break;
+              case 'refresh_token':
+                config.refresh_token = cleanValue;
+                break;
+              case 'expires_at':
+              case 'token_expires_at':
+                config.token_expires_at = parseInt(cleanValue);
+                break;
+            }
+          }
+        });
+      }
+      
+      setEbayConfig(config);
+      setUseCustomConfig(true);
+      
+      toast({
+        title: "Config Parsed",
+        description: "eBay configuration loaded successfully",
+      });
+      
+    } catch (error) {
+      toast({
+        title: "Parse Error",
+        description: "Failed to parse eBay configuration. Please check the format.",
+        variant: "destructive"
+      });
+    }
+  };
 
   const runConnectionTest = async () => {
     setTesting(true);
@@ -39,35 +142,64 @@ const EbayValidation = () => {
       // Test 1: Basic connection and credentials validation
       console.log("Testing eBay API connection...");
       
-      // Make a simple search call to test connectivity
-      const searchResponse = await fetch('https://api.ebay.com/buy/browse/v1/item_summary/search?q=test&category_ids=6030&limit=1', {
-        headers: {
-          'Authorization': `Bearer ${await getEbayAccessToken()}`,
-          'X-EBAY-C-MARKETPLACE-ID': 'EBAY_GB'
+      let accessToken = '';
+      
+      if (useCustomConfig && ebayConfig) {
+        // Use custom config
+        accessToken = ebayConfig.access_token;
+        
+        // Check if token is expired
+        if (ebayConfig.token_expires_at && ebayConfig.token_expires_at < Date.now() / 1000) {
+          results.connection = {
+            success: false,
+            message: "❌ Access token has expired",
+            error: `Token expired at ${new Date(ebayConfig.token_expires_at * 1000).toLocaleString()}`
+          };
         }
-      });
-
-      if (searchResponse.ok) {
-        results.connection = {
-          success: true,
-          message: "✅ eBay API connection successful",
-        };
       } else {
-        const errorText = await searchResponse.text();
-        results.connection = {
-          success: false,
-          message: "❌ eBay API connection failed",
-          error: `HTTP ${searchResponse.status}: ${errorText}`
-        };
+        // Try to get token from Supabase secrets (fallback)
+        try {
+          accessToken = await getEbayAccessToken();
+        } catch (error) {
+          results.connection = {
+            success: false,
+            message: "❌ Failed to get access token from Supabase",
+            error: error instanceof Error ? error.message : 'Unknown error'
+          };
+        }
+      }
+
+      if (accessToken && !results.connection) {
+        // Make a simple search call to test connectivity
+        const searchResponse = await fetch('https://api.ebay.com/buy/browse/v1/item_summary/search?q=test&category_ids=6030&limit=1', {
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'X-EBAY-C-MARKETPLACE-ID': 'EBAY_GB'
+          }
+        });
+
+        if (searchResponse.ok) {
+          results.connection = {
+            success: true,
+            message: "✅ eBay API connection successful",
+          };
+        } else {
+          const errorText = await searchResponse.text();
+          results.connection = {
+            success: false,
+            message: "❌ eBay API connection failed",
+            error: `HTTP ${searchResponse.status}: ${errorText}`
+          };
+        }
       }
 
       // Test 2: Search functionality
-      if (results.connection.success) {
+      if (results.connection?.success && accessToken) {
         console.log(`Testing search with query: ${testQuery}`);
         
         const searchTestResponse = await fetch(`https://api.ebay.com/buy/browse/v1/item_summary/search?q=${encodeURIComponent(testQuery)}&category_ids=6030&limit=5`, {
           headers: {
-            'Authorization': `Bearer ${await getEbayAccessToken()}`,
+            'Authorization': `Bearer ${accessToken}`,
             'X-EBAY-C-MARKETPLACE-ID': 'EBAY_GB'
           }
         });
@@ -184,6 +316,101 @@ const EbayValidation = () => {
         </div>
 
         <div className="max-w-4xl mx-auto space-y-6">
+          {/* Config Input Section */}
+          <Card>
+            <CardHeader>
+              <CardTitle>eBay Configuration</CardTitle>
+              <CardDescription>
+                Paste your eBay configuration from partsonclick.ae export or enter credentials manually
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  id="useCustomConfig"
+                  checked={useCustomConfig}
+                  onChange={(e) => setUseCustomConfig(e.target.checked)}
+                  className="rounded"
+                />
+                <Label htmlFor="useCustomConfig">Use custom configuration</Label>
+              </div>
+              
+              {useCustomConfig && (
+                <div className="space-y-4">
+                  <div>
+                    <Label htmlFor="configInput">eBay Configuration</Label>
+                    <p className="text-xs text-muted-foreground mb-2">
+                      Paste the configuration from ebay_export_credentials.php or enter as JSON
+                    </p>
+                    <Textarea
+                      id="configInput"
+                      value={configInput}
+                      onChange={(e) => setConfigInput(e.target.value)}
+                      placeholder={`Example formats:
+
+PHP Array:
+'client_id' => 'your_client_id',
+'client_secret' => 'your_secret',
+'dev_id' => 'your_dev_id',
+'access_token' => 'your_token',
+'refresh_token' => 'your_refresh_token',
+
+Or JSON:
+{
+  "client_id": "your_client_id",
+  "client_secret": "your_secret",
+  "dev_id": "your_dev_id",
+  "access_token": "your_token",
+  "refresh_token": "your_refresh_token"
+}
+
+Or Key-Value pairs:
+Client ID: your_client_id
+Client Secret: your_secret
+Dev ID: your_dev_id
+Access Token: your_token
+Refresh Token: your_refresh_token`}
+                      rows={12}
+                      className="font-mono text-xs"
+                    />
+                  </div>
+                  <div className="flex gap-2">
+                    <Button onClick={parseEbayConfig} disabled={!configInput.trim()}>
+                      <Upload className="w-4 h-4 mr-2" />
+                      Parse Configuration
+                    </Button>
+                    {ebayConfig && (
+                      <Button 
+                        variant="outline" 
+                        onClick={() => {
+                          navigator.clipboard.writeText(JSON.stringify(ebayConfig, null, 2));
+                          toast({ title: "Copied", description: "Configuration copied to clipboard" });
+                        }}
+                      >
+                        <Copy className="w-4 h-4 mr-2" />
+                        Copy as JSON
+                      </Button>
+                    )}
+                  </div>
+                  
+                  {ebayConfig && (
+                    <div className="bg-green-50 p-3 rounded">
+                      <p className="text-sm text-green-700 font-medium">✅ Configuration Loaded</p>
+                      <div className="text-xs text-green-600 mt-1">
+                        <p>Client ID: {ebayConfig.client_id ? `${ebayConfig.client_id.substring(0, 15)}...` : 'Missing'}</p>
+                        <p>Access Token: {ebayConfig.access_token ? `${ebayConfig.access_token.substring(0, 20)}...` : 'Missing'}</p>
+                        {ebayConfig.token_expires_at && (
+                          <p>Expires: {new Date(ebayConfig.token_expires_at * 1000).toLocaleString()}</p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
           {/* Test Configuration */}
           <Card>
             <CardHeader>
