@@ -38,19 +38,30 @@ const Upload = () => {
       }
       
       const header = lines[0].toLowerCase();
-      const requiredColumns = ['brand', 'sku', 'oe_number', 'title'];
-      const missingColumns = requiredColumns.filter(col => !header.includes(col.replace('_', '')));
+      const headerRow = header.split(',').map(h => h.trim());
+      
+      // Check for required columns with flexible matching
+      const hasBrand = headerRow.some(h => h.includes('brand'));
+      const hasSku = headerRow.some(h => h.includes('sku'));
+      const hasOE = headerRow.some(h => h.includes('oe') || h.includes('oenumber'));
+      const hasTitle = headerRow.some(h => h.includes('title'));
+      
+      const missingColumns = [];
+      if (!hasBrand) missingColumns.push('brand');
+      if (!hasSku) missingColumns.push('sku');
+      if (!hasOE) missingColumns.push('oe_number');
+      if (!hasTitle) missingColumns.push('title');
       
       if (missingColumns.length > 0) {
-        errors.push(`CSV must contain these columns: ${requiredColumns.join(', ')}. Missing: ${missingColumns.join(', ')}`);
+        errors.push(`CSV must contain these columns: brand, sku, oe_number, title. Missing: ${missingColumns.join(', ')}`);
       }
       
       // Parse CSV data
-      const headerRow = lines[0].split(',').map(h => h.trim().toLowerCase());
-      const brandIndex = headerRow.findIndex(h => h.includes('brand'));
-      const skuIndex = headerRow.findIndex(h => h.includes('sku'));
-      const oeIndex = headerRow.findIndex(h => h.includes('oe') || h.includes('oenumber'));
-      const titleIndex = headerRow.findIndex(h => h.includes('title'));
+      const headerColumns = lines[0].split(',').map(h => h.trim().toLowerCase());
+      const brandIndex = headerColumns.findIndex(h => h.includes('brand'));
+      const skuIndex = headerColumns.findIndex(h => h.includes('sku'));
+      const oeIndex = headerColumns.findIndex(h => h.includes('oe') || h.includes('oenumber'));
+      const titleIndex = headerColumns.findIndex(h => h.includes('title'));
       
       const csvData: any[] = [];
       const dataRows = lines.slice(1);
