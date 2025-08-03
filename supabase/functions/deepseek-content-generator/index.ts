@@ -18,7 +18,7 @@ serve(async (req) => {
   }
 
   try {
-    const { productId, contentType, productData } = await req.json();
+    const { productId, contentType, productData, hasEbayData } = await req.json();
     
     console.log(`Generating ${contentType} for product ${productId}`);
     
@@ -27,17 +27,17 @@ serve(async (req) => {
     let prompt = '';
     
     switch (contentType) {
-      case 'title':
-        prompt = createTitlePrompt(productData);
+      case 'seo_title':
+        prompt = createSeoTitlePrompt(productData, hasEbayData);
         break;
       case 'short_description':
-        prompt = createShortDescriptionPrompt(productData);
+        prompt = createShortDescriptionPrompt(productData, hasEbayData);
         break;
       case 'long_description':
-        prompt = createLongDescriptionPrompt(productData);
+        prompt = createLongDescriptionPrompt(productData, hasEbayData);
         break;
       case 'meta_description':
-        prompt = createMetaDescriptionPrompt(productData);
+        prompt = createMetaDescriptionPrompt(productData, hasEbayData);
         break;
       default:
         throw new Error(`Unknown content type: ${contentType}`);
@@ -96,19 +96,14 @@ serve(async (req) => {
     };
     
     // Map content types to correct column names
-    if (contentType === 'title') {
-      updateData.product_name = generatedContent; // Use product_name instead of title
+    if (contentType === 'seo_title') {
+      updateData.seo_title = generatedContent;
     } else if (contentType === 'short_description') {
       updateData.short_description = generatedContent;
     } else if (contentType === 'long_description') {
       updateData.long_description = generatedContent;
     } else if (contentType === 'meta_description') {
-      // Note: meta_description column doesn't exist in products table
-      // We could add it to technical_specs instead
-      updateData.technical_specs = {
-        ...productData.technical_specs,
-        meta_description: generatedContent
-      };
+      updateData.meta_description = generatedContent;
     }
 
     const { error: updateError } = await supabase
@@ -160,94 +155,167 @@ serve(async (req) => {
   }
 });
 
-function createTitlePrompt(productData: any): string {
-  // Try to get custom prompt from request or use default
-  const customPrompt = productData.customPrompt;
-  if (customPrompt) {
-    return replacePromptVariables(customPrompt, productData);
-  }
-  
-  return `Generate a concise, SEO-optimized product title for this auto part:
+function createSeoTitlePrompt(productData: any, hasEbayData: boolean): string {
+  if (hasEbayData && productData.ebay_data?.itemDetails) {
+    const ebayTitle = productData.ebay_data.itemDetails.title || '';
+    const ebaySpecs = JSON.stringify(productData.ebay_data.itemDetails.itemSpecifics || {});
+    
+    return `Create an SEO-optimized product title based on this eBay data:
+
+eBay Title: ${ebayTitle}
 Brand: ${productData.brand}
-SKU: ${productData.sku}
-Category: ${productData.category || 'Auto Part'}
-Price: £${productData.price || 'N/A'}
-OEM Numbers: ${productData.oem_numbers?.join(', ') || 'N/A'}
-Technical Specs: ${JSON.stringify(productData.technical_specs || {})}
+SKU: ${productData.sku}  
+OE Number: ${productData.oe_number || 'N/A'}
+eBay Item Specifics: ${ebaySpecs}
+Part Number Tags: ${productData.part_number_tags?.join(', ') || 'N/A'}
 
 Requirements:
 - Maximum 60 characters
-- Include brand, SKU only
-- Professional format: "Brand SKU - Part Type"
-- No extra descriptions or marketing text
+- Format: "Brand SKU - Part Type"
+- Use eBay data to determine accurate part type
+- Professional, clean title
+- Include main part number if space allows
 
-Return only the clean title, no explanations or formatting.`;
-}
+Return only the optimized title, no explanations.`;
+  } else {
+    // Fallback: Use original title only
+    return `Create an SEO-optimized product title from this basic information:
 
-function createShortDescriptionPrompt(productData: any): string {
-  return `Create a concise product description for this auto part:
+Original Title: ${productData.original_title || ''}
 Brand: ${productData.brand}
 SKU: ${productData.sku}
-Category: ${productData.category || 'Auto Part'}
-Price: £${productData.price || 'N/A'}
-OEM Numbers: ${productData.oem_numbers?.join(', ') || 'N/A'}
-Technical Specs: ${JSON.stringify(productData.technical_specs || {})}
-Product Name: ${productData.product_name || ''}
+OE Number: ${productData.oe_number || 'N/A'}
+
+Requirements:
+- Maximum 60 characters
+- Format: "Brand SKU - Part Type"
+- Extract part type from original title if possible
+- Professional, clean format
+
+Return only the optimized title, no explanations.`;
+  }
+}
+
+function createShortDescriptionPrompt(productData: any, hasEbayData: boolean): string {
+  if (hasEbayData && productData.ebay_data?.itemDetails) {
+    const ebayDesc = productData.ebay_data.itemDetails.description || '';
+    const ebaySpecs = JSON.stringify(productData.ebay_data.itemDetails.itemSpecifics || {});
+    
+    return `Create a concise product description using this eBay data:
+
+Brand: ${productData.brand}
+SKU: ${productData.sku}
+eBay Description: ${ebayDesc.substring(0, 500)}...
+Item Specifics: ${ebaySpecs}
+Part Numbers: ${productData.part_number_tags?.join(', ') || 'N/A'}
 
 Requirements:
 - Maximum 155 characters
 - Focus on key benefits and compatibility
-- Professional tone
-- No extra formatting or quotes
+- Professional, engaging tone
+- Include main part numbers for searchability
 
 Return only the description text, no explanations.`;
-}
+  } else {
+    return `Create a product description from basic information:
 
-function createLongDescriptionPrompt(productData: any): string {
-  return `Write a professional product description for this auto part:
+Original Title: ${productData.original_title || ''}
 Brand: ${productData.brand}
 SKU: ${productData.sku}
-Category: ${productData.category || 'Auto Part'}
-Price: £${productData.price || 'N/A'}
-OEM Numbers: ${productData.oem_numbers?.join(', ') || 'N/A'}
-Technical Specs: ${JSON.stringify(productData.technical_specs || {})}
-Product Name: ${productData.product_name || ''}
-Short Description: ${productData.short_description || ''}
+OE Number: ${productData.oe_number || 'N/A'}
+
+Requirements:
+- Maximum 155 characters
+- Focus on brand and compatibility
+- Professional tone
+- Extract part type from title
+
+Return only the description text, no explanations.`;
+  }
+}
+
+function createLongDescriptionPrompt(productData: any, hasEbayData: boolean): string {
+  if (hasEbayData && productData.ebay_data?.itemDetails) {
+    const ebayDetails = productData.ebay_data.itemDetails;
+    const itemSpecs = JSON.stringify(ebayDetails.itemSpecifics || {});
+    
+    return `Write a comprehensive product description using this eBay data:
+
+Brand: ${productData.brand}
+SKU: ${productData.sku}
+eBay Title: ${ebayDetails.title || ''}
+eBay Description: ${ebayDetails.description?.substring(0, 800) || ''}
+Item Specifics: ${itemSpecs}
+Part Numbers: ${productData.part_number_tags?.join(', ') || 'N/A'}
+Condition: ${ebayDetails.condition || 'N/A'}
 
 Requirements:
 - 200-300 words
-- Professional, informative tone
+- Use eBay data to create accurate, detailed description
 - Include technical specifications in bullet points
-- Mention OEM numbers for compatibility
-- Focus on quality and fitment
+- Mention all relevant part numbers for compatibility
+- Professional, informative tone
+- Focus on fitment and quality
 - Use clean HTML formatting
-- No marketing fluff
 
 Return only the HTML description, no explanations.`;
+  } else {
+    return `Write a product description from basic information:
+
+Original Title: ${productData.original_title || ''}
+Brand: ${productData.brand}
+SKU: ${productData.sku}
+OE Number: ${productData.oe_number || 'N/A'}
+
+Requirements:
+- 200-300 words
+- Create informative description from available data
+- Include part numbers for compatibility
+- Professional tone focusing on brand reliability
+- Use clean HTML formatting
+- Emphasize quality and fitment
+
+Return only the HTML description, no explanations.`;
+  }
 }
 
-function createMetaDescriptionPrompt(productData: any): string {
-  const customPrompt = productData.customPrompt;
-  if (customPrompt) {
-    return replacePromptVariables(customPrompt, productData);
-  }
-  
-  return `Create an SEO meta description for this automotive part:
+function createMetaDescriptionPrompt(productData: any, hasEbayData: boolean): string {
+  if (hasEbayData && productData.ebay_data?.itemDetails) {
+    const ebayTitle = productData.ebay_data.itemDetails.title || '';
+    const price = productData.ebay_data.itemDetails.price || productData.price;
+    
+    return `Create an SEO meta description using eBay data:
 
 Brand: ${productData.brand}
 SKU: ${productData.sku}
-Category: ${productData.category || 'Auto Part'}
-Product Name: ${productData.product_name || 'N/A'}
-Price: ${productData.price ? '£' + productData.price : 'N/A'}
+eBay Title: ${ebayTitle}
+Price: ${price ? '£' + price : 'N/A'}
+Part Numbers: ${productData.part_number_tags?.slice(0, 3).join(', ') || 'N/A'}
 
 Requirements:
 - Exactly 150-160 characters
-- Include brand, part type, and key benefit
-- Call to action
-- Primary keywords
+- Include brand, part type from eBay title
+- Mention key part numbers
+- Price and call to action
 - Compelling and click-worthy
 
-Format: [Brand] [Part Type] [SKU] - [Key Benefit]. [Price] with [Quality/Delivery benefit]. [CTA]`;
+Format: [Brand] [Part Type] [SKU] - [Key Part Numbers]. From £[Price]. Fast delivery. Shop now!`;
+  } else {
+    return `Create an SEO meta description from basic data:
+
+Brand: ${productData.brand}
+SKU: ${productData.sku}
+Original Title: ${productData.original_title || ''}
+OE Number: ${productData.oe_number || 'N/A'}
+
+Requirements:
+- Exactly 150-160 characters
+- Include brand and part type
+- Mention OE number
+- Professional call to action
+
+Format: [Brand] [Part Type] [SKU] - OE ${productData.oe_number}. Quality auto parts with fast delivery. Shop now!`;
+  }
 }
 
 function replacePromptVariables(template: string, productData: any): string {

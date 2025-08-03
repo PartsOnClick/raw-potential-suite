@@ -38,30 +38,42 @@ const Upload = () => {
       }
       
       const header = lines[0].toLowerCase();
-      if (!header.includes('brand') || !header.includes('sku')) {
-        errors.push("CSV must contain 'brand' and 'sku' columns");
+      const requiredColumns = ['brand', 'sku', 'oe_number', 'title'];
+      const missingColumns = requiredColumns.filter(col => !header.includes(col.replace('_', '')));
+      
+      if (missingColumns.length > 0) {
+        errors.push(`CSV must contain these columns: ${requiredColumns.join(', ')}. Missing: ${missingColumns.join(', ')}`);
       }
       
       // Parse CSV data
       const headerRow = lines[0].split(',').map(h => h.trim().toLowerCase());
       const brandIndex = headerRow.findIndex(h => h.includes('brand'));
       const skuIndex = headerRow.findIndex(h => h.includes('sku'));
+      const oeIndex = headerRow.findIndex(h => h.includes('oe') || h.includes('oenumber'));
+      const titleIndex = headerRow.findIndex(h => h.includes('title'));
       
       const csvData: any[] = [];
       const dataRows = lines.slice(1);
       
       dataRows.forEach((line, index) => {
         const columns = line.split(',').map(col => col.trim());
-        if (columns.length < 2) {
-          errors.push(`Row ${index + 2}: Insufficient columns`);
+        if (columns.length < 4) {
+          errors.push(`Row ${index + 2}: Insufficient columns (need at least 4)`);
         } else {
           const brand = columns[brandIndex]?.replace(/['"]/g, '') || '';
           const sku = columns[skuIndex]?.replace(/['"]/g, '') || '';
+          const oeNumber = columns[oeIndex]?.replace(/['"]/g, '') || '';
+          const title = columns[titleIndex]?.replace(/['"]/g, '') || '';
           
-          if (!brand || !sku) {
-            errors.push(`Row ${index + 2}: Empty brand or SKU`);
+          if (!brand || !sku || !title) {
+            errors.push(`Row ${index + 2}: Empty brand, SKU, or title`);
           } else {
-            csvData.push({ brand, sku });
+            csvData.push({ 
+              brand, 
+              sku, 
+              oe_number: oeNumber,
+              original_title: title
+            });
           }
         }
       });
@@ -112,7 +124,8 @@ const Upload = () => {
         batch_id: batch.id,
         brand: item.brand.toLowerCase(),
         sku: item.sku,
-        autodoc_url: `https://www.autodoc.co.uk/spares-search?keyword=${encodeURIComponent(item.brand)}+${encodeURIComponent(item.sku)}`,
+        oe_number: item.oe_number,
+        original_title: item.original_title,
         scraping_status: 'pending',
         ai_content_status: 'pending'
       }));
@@ -170,7 +183,7 @@ const Upload = () => {
           <div className="text-center mb-8">
             <h1 className="text-3xl font-bold mb-4">Upload & Process</h1>
             <p className="text-muted-foreground">
-              Upload your CSV file containing brand and SKU data to start the processing pipeline
+              Upload your CSV file with brand, SKU, OE number, and title data for eBay-first processing
             </p>
           </div>
 
@@ -178,7 +191,7 @@ const Upload = () => {
             <CardHeader>
               <CardTitle>CSV File Upload</CardTitle>
               <CardDescription>
-                Select a CSV file with 'brand' and 'sku' columns
+                Select a CSV file with 'brand', 'sku', 'oe_number', and 'title' columns
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -261,15 +274,25 @@ const Upload = () => {
                 <div>
                   <p className="font-medium">Required Columns:</p>
                   <ul className="list-disc list-inside ml-4 text-muted-foreground">
-                    <li><code>brand</code> - Manufacturer name (e.g., monroe, bosch)</li>
-                    <li><code>sku</code> - Part number (e.g., 376047SP, 0986424502)</li>
+                    <li><code>brand</code> - Manufacturer name (e.g., Febi, Monroe)</li>
+                    <li><code>sku</code> - Part number/SKU (e.g., 2205000049)</li>
+                    <li><code>oe_number</code> - OE/OEM number (e.g., A2205000049)</li>
+                    <li><code>title</code> - Original product title</li>
                   </ul>
                 </div>
                 <div>
                   <p className="font-medium">Example:</p>
                   <pre className="bg-muted p-3 rounded text-xs overflow-x-auto">
-brand,sku{'\n'}monroe,376047SP{'\n'}bosch,0986424502{'\n'}sachs,311513
+brand,sku,oe_number,title{'\n'}Febi,2205000049,A2205000049,Shock Absorber Rear{'\n'}Monroe,376047SP,37143,Front Strut Assembly
                   </pre>
+                </div>
+                <div>
+                  <p className="font-medium text-blue-600">eBay-First Processing:</p>
+                  <p className="text-sm text-muted-foreground">
+                    The system will search eBay using Brand+SKU, then Brand+OE, then OE only. 
+                    If eBay data is found, it will be used to generate optimized content. 
+                    Otherwise, DeepSeek will work with the original title.
+                  </p>
                 </div>
               </div>
             </CardContent>

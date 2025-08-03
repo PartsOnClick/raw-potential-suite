@@ -103,6 +103,7 @@ export type Database = {
           created_at: string
           error_message: string | null
           id: string
+          operation_details: Json | null
           operation_type: string
           product_id: string | null
           retry_count: number | null
@@ -113,6 +114,7 @@ export type Database = {
           created_at?: string
           error_message?: string | null
           id?: string
+          operation_details?: Json | null
           operation_type: string
           product_id?: string | null
           retry_count?: number | null
@@ -123,6 +125,7 @@ export type Database = {
           created_at?: string
           error_message?: string | null
           id?: string
+          operation_details?: Json | null
           operation_type?: string
           product_id?: string | null
           retry_count?: number | null
@@ -154,14 +157,21 @@ export type Database = {
           category: string | null
           created_at: string
           dimensions: string | null
+          ebay_data: Json | null
+          ebay_item_id: string | null
           id: string
           images: Json | null
           long_description: string | null
+          meta_description: string | null
+          oe_number: string | null
           oem_numbers: Json | null
+          original_title: string | null
+          part_number_tags: string[] | null
           price: number | null
           product_name: string | null
           raw_scraped_data: Json | null
           scraping_status: string | null
+          seo_title: string | null
           short_description: string | null
           sku: string
           technical_specs: Json | null
@@ -176,14 +186,21 @@ export type Database = {
           category?: string | null
           created_at?: string
           dimensions?: string | null
+          ebay_data?: Json | null
+          ebay_item_id?: string | null
           id?: string
           images?: Json | null
           long_description?: string | null
+          meta_description?: string | null
+          oe_number?: string | null
           oem_numbers?: Json | null
+          original_title?: string | null
+          part_number_tags?: string[] | null
           price?: number | null
           product_name?: string | null
           raw_scraped_data?: Json | null
           scraping_status?: string | null
+          seo_title?: string | null
           short_description?: string | null
           sku: string
           technical_specs?: Json | null
@@ -198,14 +215,21 @@ export type Database = {
           category?: string | null
           created_at?: string
           dimensions?: string | null
+          ebay_data?: Json | null
+          ebay_item_id?: string | null
           id?: string
           images?: Json | null
           long_description?: string | null
+          meta_description?: string | null
+          oe_number?: string | null
           oem_numbers?: Json | null
+          original_title?: string | null
+          part_number_tags?: string[] | null
           price?: number | null
           product_name?: string | null
           raw_scraped_data?: Json | null
           scraping_status?: string | null
+          seo_title?: string | null
           short_description?: string | null
           sku?: string
           technical_specs?: Json | null

@@ -1,1 +1,10 @@
 project_id = "diwryjzthqseboohfbmh"
+
+[functions.batch-processor]
+verify_jwt = false
+
+[functions.deepseek-content-generator]
+verify_jwt = false
+
+[functions.ebay-search]
+verify_jwt = false

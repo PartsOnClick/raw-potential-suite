@@ -64,30 +64,31 @@ serve(async (req) => {
       try {
         console.log(`Processing product ${product.id} - ${product.brand} ${product.sku}`);
         
-        // Step 1: Google Search for product data with enhanced technical specs search
+        // Step 1: eBay Search (primary data source)
         try {
           const { data: searchResult, error: searchError } = await supabaseAdmin.functions.invoke(
-            'google-product-search',
+            'ebay-search',
             {
               body: {
+                productId: product.id,
                 brand: product.brand,
                 sku: product.sku,
-                productId: product.id,
+                oeNumber: product.oe_number,
               },
             }
           );
 
           if (searchError) {
-            console.error(`Google search failed for ${product.brand} ${product.sku}:`, searchError);
+            console.error(`eBay search failed for ${product.brand} ${product.sku}:`, searchError);
           } else {
-            console.log(`Google search completed for ${product.brand} ${product.sku}`);
+            console.log(`eBay search completed for ${product.brand} ${product.sku}`);
           }
         } catch (searchErr) {
-          console.error(`Google search error for ${product.brand} ${product.sku}:`, searchErr);
+          console.error(`eBay search error for ${product.brand} ${product.sku}:`, searchErr);
         }
 
-        // Wait for scraping to complete and get updated product data
-        await new Promise(resolve => setTimeout(resolve, 2000)); // Allow more time for scraping
+        // Wait for eBay data processing to complete
+        await new Promise(resolve => setTimeout(resolve, 2000));
         
         const { data: updatedProduct } = await supabaseAdmin
           .from('products')
@@ -95,20 +96,17 @@ serve(async (req) => {
           .eq('id', product.id)
           .single();
 
-        // Check if scraping was successful before proceeding with AI generation
-        const hasScrapedData = updatedProduct && (
-          updatedProduct.product_name || 
-          updatedProduct.category || 
-          Object.keys(updatedProduct.technical_specs || {}).length > 0 ||
-          updatedProduct.oem_numbers?.length > 0
+        // Check if eBay data was found
+        const hasEbayData = updatedProduct && (
+          updatedProduct.ebay_item_id || 
+          Object.keys(updatedProduct.ebay_data || {}).length > 0 ||
+          updatedProduct.part_number_tags?.length > 0
         );
 
-        if (!hasScrapedData) {
-          console.warn(`Limited scraped data for ${product.brand} ${product.sku}, proceeding with basic data`);
-        }
+        console.log(`Product ${product.id} has eBay data: ${hasEbayData}`);
 
-        // Step 2: Generate AI content (title, short description, long description) sequentially
-        const contentTypes = ['title', 'short_description', 'long_description'];
+        // Step 2: Generate AI content (SEO title, descriptions, meta) sequentially
+        const contentTypes = ['seo_title', 'short_description', 'long_description', 'meta_description'];
         
         for (const contentType of contentTypes) {
           try {
@@ -119,6 +117,7 @@ serve(async (req) => {
                   productId: product.id,
                   contentType: contentType,
                   productData: updatedProduct || product,
+                  hasEbayData: hasEbayData,
                 },
               }
             );
