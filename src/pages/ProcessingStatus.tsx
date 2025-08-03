@@ -238,14 +238,14 @@ const ProcessingStatus = () => {
                   </div>
 
                   <div className="flex flex-wrap gap-2 pt-3 border-t">
-                    {batch.status === "failed" && (
+                    {(batch.status === "failed" || batch.status === "pending") && (
                       <Button 
                         size="sm" 
                         variant="outline"
                         onClick={() => handleRetryBatch(batch.id)}
                       >
                         <RefreshCw className="w-4 h-4 mr-2" />
-                        Retry Failed
+                        {batch.status === "pending" ? "Start Processing" : "Retry Failed"}
                       </Button>
                     )}
                     <Button size="sm" variant="outline">
