@@ -405,18 +405,20 @@ async function getEbayItemDetails(itemId: string, ebayConfig?: any) {
       <ItemID>${itemId}</ItemID>
     </GetItemRequest>`;
 
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers: headers,
-    body: requestXml
-  });
+  try {
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: headers,
+      body: requestXml,
+      signal: AbortSignal.timeout(30000) // 30 second timeout
+    });
 
-  if (response.status !== 200) {
-    console.error(`[eBay Details] API returned HTTP ${response.status}`);
-    return { error: `Details API returned HTTP ${response.status}` };
-  }
+    if (response.status !== 200) {
+      console.error(`[eBay Details] API returned HTTP ${response.status}`);
+      return { error: `Details API returned HTTP ${response.status}` };
+    }
 
-  const xmlText = await response.text();
+    const xmlText = await response.text();
   
   try {
     // Parse XML response using regex-based parsing for Deno
@@ -452,6 +454,10 @@ async function getEbayItemDetails(itemId: string, ebayConfig?: any) {
   } catch (error) {
     console.error('[eBay Details] XML parsing error:', error);
     return { error: 'Failed to parse eBay response' };
+  }
+  } catch (networkError) {
+    console.error('[eBay Details] Network error:', networkError);
+    return { error: 'Network timeout or connection failed' };
   }
 }
 

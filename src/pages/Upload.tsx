@@ -166,7 +166,7 @@ const Upload = () => {
       
       toast({
         title: "Upload Successful",
-        description: `Created batch with ${validationResult.rowCount} items. Processing started!`,
+        description: `Created batch with ${validationResult.rowCount} items. Processing started in background!`,
       });
       
       // Reset form

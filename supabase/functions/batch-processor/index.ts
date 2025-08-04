@@ -22,6 +22,10 @@ serve(async (req) => {
     
     console.log(`Starting batch processing for batch ${batchId}`);
 
+    // Set timeout to prevent 504 errors
+    const timeoutMs = 300000; // 5 minutes
+    const startTime = Date.now();
+
     // Create Supabase client with service role key
     const supabaseAdmin = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
@@ -56,159 +60,154 @@ serve(async (req) => {
       .update({ status: 'processing', updated_at: new Date().toISOString() })
       .eq('id', batchId);
 
-    // Process products sequentially to handle large file sets better
+    // Process products in smaller batches to prevent timeouts
     let successfullyProcessed = 0;
     let errors = [];
-
-    for (const product of products) {
-      try {
-        console.log(`Processing product ${product.id} - ${product.brand} ${product.sku}`);
-        
-        // Step 1: eBay Search (ONLY data source - no Google)
-        console.log(`[Batch] Starting eBay search for ${product.brand} ${product.sku} (${product.oe_number})`);
-        
-        try {
-          const ebaySearchBody = {
-            productId: product.id,
-            brand: product.brand,
-            sku: product.sku,
-            oeNumber: product.oe_number,
-          };
-          
-          console.log(`[Batch] eBay search request:`, ebaySearchBody);
-          
-          const { data: searchResult, error: searchError } = await supabaseAdmin.functions.invoke(
-            'ebay-search',
-            { body: ebaySearchBody }
-          );
-
-          if (searchError) {
-            console.error(`[Batch] eBay search failed for ${product.brand} ${product.sku}:`, JSON.stringify(searchError));
-            throw new Error(`eBay search failed: ${searchError.message || JSON.stringify(searchError)}`);
-          } else {
-            console.log(`[Batch] eBay search completed successfully for ${product.brand} ${product.sku}:`, searchResult);
-          }
-        } catch (searchErr) {
-          console.error(`[Batch] eBay search error for ${product.brand} ${product.sku}:`, searchErr);
-          throw new Error(`eBay search error: ${searchErr.message}`);
+    const batchSize = 3; // Process 3 products at a time
+    
+    // Return early response for async processing
+    const processInBackground = async () => {
+      for (let i = 0; i < products.length; i += batchSize) {
+        // Check timeout
+        if (Date.now() - startTime > timeoutMs - 30000) { // Leave 30s buffer
+          console.log(`Timeout approaching, stopping batch processing`);
+          await supabaseAdmin
+            .from('import_batches')
+            .update({ 
+              status: 'completed',
+              successful_items: successfullyProcessed,
+              failed_items: Math.max(0, products.length - successfullyProcessed),
+              error_details: errors.length > 0 ? errors.join('; ') : null
+            })
+            .eq('id', batchId);
+          break;
         }
 
-        // Wait for eBay data processing to complete and fetch updated product
-        console.log(`[Batch] Waiting for eBay data processing to complete...`);
-        await new Promise(resolve => setTimeout(resolve, 3000));
+        const currentBatch = products.slice(i, i + batchSize);
+        console.log(`Processing batch ${Math.floor(i/batchSize) + 1}/${Math.ceil(products.length/batchSize)} (${currentBatch.length} products)`);
         
-        const { data: updatedProduct, error: fetchError } = await supabaseAdmin
-          .from('products')
-          .select('*')
-          .eq('id', product.id)
-          .single();
-        
-        if (fetchError) {
-          console.error(`[Batch] Error fetching updated product:`, fetchError);
-          throw new Error(`Failed to fetch updated product: ${fetchError.message}`);
-        }
-
-        // Check if eBay data was found
-        const hasEbayData = updatedProduct && (
-          updatedProduct.ebay_item_id || 
-          Object.keys(updatedProduct.ebay_data || {}).length > 0 ||
-          updatedProduct.part_number_tags?.length > 0
-        );
-
-        console.log(`[Batch] Product ${product.id} has eBay data: ${hasEbayData}`);
-        console.log(`[Batch] eBay item ID: ${updatedProduct?.ebay_item_id || 'none'}`);
-        console.log(`[Batch] Part number tags: ${updatedProduct?.part_number_tags?.length || 0} tags`);
-        console.log(`[Batch] Scraping status: ${updatedProduct?.scraping_status}`);
-        
-        if (!hasEbayData) {
-          console.warn(`[Batch] No eBay data found for ${product.brand} ${product.sku}. Will proceed with title-only content generation.`);
-        }
-
-        // Step 2: Generate AI content (SEO title, descriptions, meta) sequentially
-        console.log(`[Batch] Starting AI content generation for ${product.brand} ${product.sku}`);
-        const contentTypes = ['seo_title', 'short_description', 'long_description', 'meta_description'];
-        
-        for (const contentType of contentTypes) {
+        // Process current batch concurrently
+        await Promise.allSettled(currentBatch.map(async (product) => {
           try {
-            console.log(`[Batch] Generating ${contentType} for ${product.brand} ${product.sku}`);
+            console.log(`Processing product ${product.id} - ${product.brand} ${product.sku}`);
             
-            const contentBody = {
-              productId: product.id,
-              contentType: contentType,
-              productData: updatedProduct || product,
-              hasEbayData: hasEbayData,
-            };
+            // Step 1: eBay Search
+            console.log(`[Batch] Starting eBay search for ${product.brand} ${product.sku} (${product.oe_number})`);
             
-            const { data: contentResult, error: contentError } = await supabaseAdmin.functions.invoke(
-              'deepseek-content-generator',
-              { body: contentBody }
+            const { data: searchResult, error: searchError } = await supabaseAdmin.functions.invoke(
+              'ebay-search',
+              { 
+                body: {
+                  productId: product.id,
+                  brand: product.brand,
+                  sku: product.sku,
+                  oeNumber: product.oe_number,
+                }
+              }
             );
 
-            if (contentError) {
-              console.error(`[Batch] Content generation failed for ${contentType}:`, JSON.stringify(contentError));
-              errors.push(`${product.brand} ${product.sku} - ${contentType}: ${contentError.message || JSON.stringify(contentError)}`);
-            } else {
-              console.log(`[Batch] Successfully generated ${contentType} for ${product.brand} ${product.sku}:`, contentResult);
+            if (searchError) {
+              console.error(`[Batch] eBay search failed for ${product.brand} ${product.sku}:`, searchError);
+              throw new Error(`eBay search failed: ${searchError.message}`);
             }
 
-            // Small delay between content generation calls
-            await new Promise(resolve => setTimeout(resolve, 1000));
+            // Wait for eBay data processing and fetch updated product
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            
+            const { data: updatedProduct } = await supabaseAdmin
+              .from('products')
+              .select('*')
+              .eq('id', product.id)
+              .single();
+
+            // Step 2: Generate AI content
+            console.log(`[Batch] Starting AI content generation for ${product.brand} ${product.sku}`);
+            const contentTypes = ['seo_title', 'short_description', 'long_description', 'meta_description'];
+            
+            for (const contentType of contentTypes) {
+              const { error: contentError } = await supabaseAdmin.functions.invoke(
+                'deepseek-content-generator',
+                { 
+                  body: {
+                    productId: product.id,
+                    contentType: contentType,
+                    productData: updatedProduct || product,
+                  }
+                }
+              );
+
+              if (contentError) {
+                console.error(`[Batch] Content generation failed for ${contentType}:`, contentError);
+                errors.push(`${product.brand} ${product.sku} - ${contentType}: ${contentError.message}`);
+              }
+
+              await new Promise(resolve => setTimeout(resolve, 500));
+            }
+
+            // Update product status
+            await supabaseAdmin
+              .from('products')
+              .update({ 
+                scraping_status: 'scraped',
+                ai_content_status: 'generated'
+              })
+              .eq('id', product.id);
+
+            successfullyProcessed++;
+            console.log(`Completed processing product ${product.id}`);
             
           } catch (error) {
-            console.error(`[Batch] Error generating ${contentType}:`, error);
-            errors.push(`${product.brand} ${product.sku} - ${contentType}: ${error.message}`);
+            console.error(`Error processing product ${product.id}:`, error);
+            errors.push(`${product.brand} ${product.sku}: ${error.message}`);
+            
+            await supabaseAdmin
+              .from('products')
+              .update({ 
+                scraping_status: 'failed',
+                ai_content_status: 'failed'
+              })
+              .eq('id', product.id);
           }
-        }
+        }));
 
-        // Update product status to completed
+        // Update batch progress after each batch
         await supabaseAdmin
-          .from('products')
+          .from('import_batches')
           .update({ 
-            scraping_status: 'scraped',
-            ai_content_status: 'generated'
+            processed_items: Math.min(i + batchSize, products.length),
+            successful_items: successfullyProcessed,
+            failed_items: Math.max(0, (i + batchSize) - successfullyProcessed),
           })
-          .eq('id', product.id);
+          .eq('id', batchId);
 
-        successfullyProcessed++;
-        console.log(`Completed processing product ${product.id}`);
-        
-        // Add delay between products to prevent overwhelming the system
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        
-      } catch (error) {
-        console.error(`Error processing product ${product.id}:`, error);
-        errors.push(`${product.brand} ${product.sku}: ${error.message}`);
-        
-        // Update product status to failed
-        await supabaseAdmin
-          .from('products')
-          .update({ 
-            scraping_status: 'failed',
-            ai_content_status: 'failed'
-          })
-          .eq('id', product.id);
+        // Delay between batches
+        await new Promise(resolve => setTimeout(resolve, 2000));
       }
-    }
 
-    // Update batch status
-    await supabaseAdmin
-      .from('import_batches')
-      .update({ 
-        status: 'completed',
-        successful_items: successfullyProcessed,
-        failed_items: products.length - successfullyProcessed,
-        error_details: errors.length > 0 ? errors.join('; ') : null
-      })
-      .eq('id', batchId);
+      // Final batch status update
+      await supabaseAdmin
+        .from('import_batches')
+        .update({ 
+          status: 'completed',
+          successful_items: successfullyProcessed,
+          failed_items: Math.max(0, products.length - successfullyProcessed),
+          error_details: errors.length > 0 ? errors.join('; ') : null,
+          completed_at: new Date().toISOString()
+        })
+        .eq('id', batchId);
 
-    console.log(`Batch processing completed. Successful: ${successfullyProcessed}, Failed: ${products.length - successfullyProcessed}`);
+      console.log(`Batch processing completed. Successful: ${successfullyProcessed}, Failed: ${products.length - successfullyProcessed}`);
+    };
 
+    // Start background processing
+    EdgeRuntime.waitUntil(processInBackground());
+
+    // Return immediate response
     return new Response(
       JSON.stringify({ 
         success: true, 
-        processed: successfullyProcessed,
-        failed: products.length - successfullyProcessed,
-        errors: errors 
+        message: `Started processing ${products.length} products in background`,
+        batchId: batchId
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
