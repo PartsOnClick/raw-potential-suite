@@ -87,21 +87,8 @@ const ExportManager = () => {
     );
   };
 
-  // Using imported utility functions
-
   const generateWooCommerceCSV = () => {
     const selectedProductData = readyProducts.filter(p => selectedProducts.includes(p.id));
-    
-    // Extract all unique itemSpecifics keys from eBay data to create dynamic columns
-    const allItemSpecificsKeys = new Set<string>();
-    selectedProductData.forEach(product => {
-      const itemSpecifics = product.ebay_data?.itemDetails?.itemSpecifics || {};
-      Object.keys(itemSpecifics).forEach(key => {
-        // Clean up the key name (remove <Name> prefix if present)
-        const cleanKey = key.replace(/^<Name>/, '').trim();
-        if (cleanKey) allItemSpecificsKeys.add(cleanKey);
-      });
-    });
     
     const baseHeaders = [
       'Type',
@@ -146,6 +133,7 @@ const ExportManager = () => {
       'Packing Width (cm)', 
       'Packing Height (cm)',
       'Fitting Position',
+      'Product-Tag',
       'Attribute 1 name',
       'Attribute 1 value(s)',
       'Attribute 1 visible',
@@ -158,10 +146,6 @@ const ExportManager = () => {
       'Meta: oem_numbers',
       'Meta: technical_specs'
     ];
-    
-    // Add itemSpecifics columns
-    const itemSpecificsHeaders = Array.from(allItemSpecificsKeys).sort().map(key => `ItemSpec: ${key}`);
-    const headers = [...baseHeaders, ...itemSpecificsHeaders];
 
     const rows = selectedProductData.map(product => {
       // Extract data from technical_specs and raw_scraped_data
@@ -176,6 +160,33 @@ const ExportManager = () => {
       
       // Extract images using utility function
       const uniqueImages = extractEbayImages(product);
+      
+      // Combine ItemSpec values for Product-Tag column
+      const productTagFields = [
+        'Gebr-Nummer(s)',
+        'Herstellernummer', 
+        'Interchange Part Number',
+        'MPN',
+        'Manufacturer Part Number',
+        'OE/OEM Part Number',
+        'Other Part Number',
+        'Reference OE/OEM Number',
+        'Superseded Part Number'
+      ];
+      
+      const productTagValues = new Set<string>();
+      productTagFields.forEach(field => {
+        const value = getItemSpecificValue(itemSpecifics, field);
+        if (value && value.trim()) {
+          // Split by common separators and add each unique value
+          value.split(/[,;|\/]/).forEach(v => {
+            const cleanValue = v.trim();
+            if (cleanValue) productTagValues.add(cleanValue);
+          });
+        }
+      });
+      
+      const productTagString = Array.from(productTagValues).join(' | ');
       
       // Try to get EAN from multiple sources including eBay itemSpecifics
       const eanNumber = itemSpecifics.EAN || itemSpecifics['EAN'] || rawData.ean_number || specs.ean_number || product.ean_number || '';
@@ -194,11 +205,14 @@ const ExportManager = () => {
       // Extract dimensions using improved method
       const dimensions = extractDimensions(rawData, specs);
       
+      // Fix: Ensure product title is not blank - use original_title, seo_title, product_name, or fallback
+      const productTitle = product.seo_title || product.product_name || product.original_title || `${product.brand} ${product.sku}`;
+      
       // Build base row data
       const baseRowData = [
         'simple', // Type
-        product.sku, // SKU
-        product.seo_title || product.product_name || `${product.brand} ${product.sku}`, // Name (use seo_title if available)
+        `="${product.sku}"`, // SKU - preserve leading zeros
+        productTitle, // Name - fixed to not be blank
         '1', // Published
         '0', // Featured
         'visible', // Visibility
@@ -223,7 +237,7 @@ const ExportManager = () => {
         product.category || 'Auto Parts', // Categories
         `${product.brand}, auto parts`, // Tags
         '', // Shipping class
-        includeImages ? uniqueImages.join(', ') : '', // Images (including eBay thumbnailImages)
+        includeImages ? uniqueImages.join(', ') : '', // Images - fixed to include all images
         '', // Download limit
         '', // Download expiry days
         '', // Parent
@@ -233,11 +247,12 @@ const ExportManager = () => {
         '', // External URL
         '', // Button text
         '0', // Position
-        eanNumber, // EAN Number
+        `="${eanNumber}"`, // EAN Number - preserve leading zeros
         packingLength, // Packing Length (cm)
         packingWidth, // Packing Width (cm)
         packingHeight, // Packing Height (cm)
         fittingPosition, // Fitting Position
+        productTagString, // Product-Tag - combined ItemSpec fields
         'Brand', // Attribute 1 name
         product.brand, // Attribute 1 value(s)
         '1', // Attribute 1 visible
@@ -251,17 +266,20 @@ const ExportManager = () => {
         includeSpecs ? JSON.stringify(Object.assign({}, product.technical_specs || {}, product.raw_scraped_data || {})) : '' // Meta: technical_specs
       ];
       
-      // Add itemSpecifics values in the same order as headers
-      const itemSpecificsValues = Array.from(allItemSpecificsKeys).sort().map(key => {
-        const cleanKey = key.replace(/^<Name>/, '').trim();
-        return itemSpecifics[key] || itemSpecifics[cleanKey] || itemSpecifics[`<Name>${cleanKey}`] || '';
-      });
-      
-      return [...baseRowData, ...itemSpecificsValues];
+      return baseRowData;
     });
 
-    const csvContent = [headers, ...rows]
-      .map(row => row.map(field => `"${String(field).replace(/"/g, '""')}"`).join(','))
+    // Fix: Preserve leading zeros by using proper CSV formatting
+    const csvContent = [baseHeaders, ...rows]
+      .map(row => row.map(field => {
+        const fieldStr = String(field);
+        // For fields that start with ="...", keep them as is to preserve Excel formatting
+        if (fieldStr.startsWith('="') && fieldStr.endsWith('"')) {
+          return fieldStr;
+        }
+        // Otherwise, wrap in quotes and escape internal quotes
+        return `"${fieldStr.replace(/"/g, '""')}"`;
+      }).join(','))
       .join('\n');
 
     return csvContent;
@@ -485,7 +503,7 @@ const ExportManager = () => {
                               <Badge variant="outline" className="text-xs">{product.category}</Badge>
                             </div>
                             <p className="text-sm text-muted-foreground truncate">
-                              {product.product_name}
+                              {product.seo_title || product.product_name || product.original_title || `${product.brand} ${product.sku}`}
                             </p>
                             <div className="flex items-center gap-4 mt-1">
                               <span className="text-sm font-medium">£{product.price}</span>
