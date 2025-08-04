@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { cleanOemNumbers, extractWeight, extractDimensions, extractItemSpecificsKeys, getItemSpecificValue, extractEbayImages } from "@/utils/exportUtils";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -86,117 +87,23 @@ const ExportManager = () => {
     );
   };
 
-  const cleanOemNumbers = (oemArray) => {
-    if (!Array.isArray(oemArray)) return [];
-    
-    return oemArray
-      .filter(item => {
-        if (!item || typeof item !== 'string') return false;
-        
-        // Remove items that are clearly not OEM numbers
-        const cleanItem = item.trim().toUpperCase();
-        
-        // Skip brand names and common words
-        const excludeWords = ['BILSTEIN', 'FEBI', 'BOSCH', 'SACHS', 'PIERBURG', 'REINZ', 'BMW', 'MERCEDES', 'AUDI', 'VW', 'VOLKSWAGEN', 'NUMBERS', 'PART', 'AUTO', 'PARTS', 'GENUINE', 'OEM', 'ORIGINAL'];
-        if (excludeWords.some(word => cleanItem === word)) return false;
-        
-        // Skip items that are too short (less than 4 characters) or too long (more than 20)
-        if (cleanItem.length < 4 || cleanItem.length > 20) return false;
-        
-        // Skip items with too many dots or special characters
-        if ((cleanItem.match(/\./g) || []).length > 1) return false;
-        if (cleanItem.includes('...')) return false;
-        
-        // Skip incomplete numbers (ending with dots or having weird patterns)
-        if (cleanItem.endsWith('.') && cleanItem.length < 8) return false;
-        
-        // Must contain at least some numbers
-        if (!/\d/.test(cleanItem)) return false;
-        
-        return true;
-      })
-      .map(item => item.trim().replace(/\.$/, '')) // Remove trailing dots
-      .filter((item, index, arr) => arr.indexOf(item) === index); // Remove duplicates
-  };
-
-  const extractWeight = (rawData, specs) => {
-    // Try multiple sources and patterns for weight
-    const weightSources = [
-      rawData.weight,
-      specs.weight,
-      rawData.Weight,
-      specs.Weight,
-      rawData.weightKg,
-      specs.weightKg,
-      rawData['Weight (kg)'],
-      specs['Weight (kg)'],
-      rawData.extractedData?.weight,
-      rawData.extractedData?.Weight
-    ];
-    
-    for (let weight of weightSources) {
-      if (weight && typeof weight === 'string') {
-        // Extract numeric value from weight strings like "1.5 kg", "2kg", "500g"
-        const match = weight.match(/(\d+\.?\d*)\s*(kg|g)?/i);
-        if (match) {
-          let value = parseFloat(match[1]);
-          // Convert grams to kg
-          if (match[2] && match[2].toLowerCase() === 'g') {
-            value = value / 1000;
-          }
-          return value.toString();
-        }
-      } else if (weight && typeof weight === 'number') {
-        return weight.toString();
-      }
-    }
-    return '1'; // Default weight
-  };
-
-  const extractDimensions = (rawData, specs) => {
-    const dimensionFields = ['length', 'width', 'height'];
-    const dimensions = {};
-    
-    dimensionFields.forEach(field => {
-      const sources = [
-        rawData[field],
-        specs[field],
-        rawData[field + '_cm'],
-        specs[field + '_cm'],
-        rawData[field.charAt(0).toUpperCase() + field.slice(1)],
-        specs[field.charAt(0).toUpperCase() + field.slice(1)],
-        rawData[`${field} (cm)`],
-        specs[`${field} (cm)`],
-        rawData.extractedData?.[field],
-        rawData.extractedData?.[field + '_cm']
-      ];
-      
-      for (let value of sources) {
-        if (value && typeof value === 'string') {
-          const match = value.match(/(\d+\.?\d*)\s*(cm|mm)?/i);
-          if (match) {
-            let numValue = parseFloat(match[1]);
-            // Convert mm to cm
-            if (match[2] && match[2].toLowerCase() === 'mm') {
-              numValue = numValue / 10;
-            }
-            dimensions[field] = numValue.toString();
-            break;
-          }
-        } else if (value && typeof value === 'number') {
-          dimensions[field] = value.toString();
-          break;
-        }
-      }
-    });
-    
-    return dimensions;
-  };
+  // Using imported utility functions
 
   const generateWooCommerceCSV = () => {
     const selectedProductData = readyProducts.filter(p => selectedProducts.includes(p.id));
     
-    const headers = [
+    // Extract all unique itemSpecifics keys from eBay data to create dynamic columns
+    const allItemSpecificsKeys = new Set<string>();
+    selectedProductData.forEach(product => {
+      const itemSpecifics = product.ebay_data?.itemDetails?.itemSpecifics || {};
+      Object.keys(itemSpecifics).forEach(key => {
+        // Clean up the key name (remove <Name> prefix if present)
+        const cleanKey = key.replace(/^<Name>/, '').trim();
+        if (cleanKey) allItemSpecificsKeys.add(cleanKey);
+      });
+    });
+    
+    const baseHeaders = [
       'Type',
       'SKU',
       'Name',
@@ -251,6 +158,10 @@ const ExportManager = () => {
       'Meta: oem_numbers',
       'Meta: technical_specs'
     ];
+    
+    // Add itemSpecifics columns
+    const itemSpecificsHeaders = Array.from(allItemSpecificsKeys).sort().map(key => `ItemSpec: ${key}`);
+    const headers = [...baseHeaders, ...itemSpecificsHeaders];
 
     const rows = selectedProductData.map(product => {
       // Extract data from technical_specs and raw_scraped_data
@@ -260,8 +171,14 @@ const ExportManager = () => {
       // Clean OEM numbers
       const cleanedOemNumbers = cleanOemNumbers(product.oem_numbers || []);
       
-      // Try to get EAN from multiple sources
-      const eanNumber = rawData.ean_number || specs.ean_number || product.ean_number || '';
+      // Extract eBay itemSpecifics data
+      const itemSpecifics = product.ebay_data?.itemDetails?.itemSpecifics || {};
+      
+      // Extract images using utility function
+      const uniqueImages = extractEbayImages(product);
+      
+      // Try to get EAN from multiple sources including eBay itemSpecifics
+      const eanNumber = itemSpecifics.EAN || itemSpecifics['EAN'] || rawData.ean_number || specs.ean_number || product.ean_number || '';
       
       // Try to get packing dimensions from scraped data
       const packingLength = rawData.packing_length_cm || specs.packing_length_cm || '';
@@ -277,10 +194,11 @@ const ExportManager = () => {
       // Extract dimensions using improved method
       const dimensions = extractDimensions(rawData, specs);
       
-      return [
+      // Build base row data
+      const baseRowData = [
         'simple', // Type
         product.sku, // SKU
-        product.product_name || `${product.brand} ${product.sku}`, // Name
+        product.seo_title || product.product_name || `${product.brand} ${product.sku}`, // Name (use seo_title if available)
         '1', // Published
         '0', // Featured
         'visible', // Visibility
@@ -305,7 +223,7 @@ const ExportManager = () => {
         product.category || 'Auto Parts', // Categories
         `${product.brand}, auto parts`, // Tags
         '', // Shipping class
-        includeImages ? (product.images && product.images.length > 0 ? product.images.join(', ') : '') : '', // Images
+        includeImages ? uniqueImages.join(', ') : '', // Images (including eBay thumbnailImages)
         '', // Download limit
         '', // Download expiry days
         '', // Parent
@@ -332,6 +250,14 @@ const ExportManager = () => {
         cleanedOemNumbers.length > 0 ? cleanedOemNumbers.join(', ') : '', // Meta: oem_numbers
         includeSpecs ? JSON.stringify(Object.assign({}, product.technical_specs || {}, product.raw_scraped_data || {})) : '' // Meta: technical_specs
       ];
+      
+      // Add itemSpecifics values in the same order as headers
+      const itemSpecificsValues = Array.from(allItemSpecificsKeys).sort().map(key => {
+        const cleanKey = key.replace(/^<Name>/, '').trim();
+        return itemSpecifics[key] || itemSpecifics[cleanKey] || itemSpecifics[`<Name>${cleanKey}`] || '';
+      });
+      
+      return [...baseRowData, ...itemSpecificsValues];
     });
 
     const csvContent = [headers, ...rows]

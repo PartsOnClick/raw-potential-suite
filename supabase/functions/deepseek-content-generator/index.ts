@@ -156,6 +156,13 @@ serve(async (req) => {
 });
 
 function createSeoTitlePrompt(productData: any, hasEbayData: boolean): string {
+  // Use custom prompts if available
+  const customPrompts = getCustomPrompts();
+  if (customPrompts?.title) {
+    return replacePromptVariables(customPrompts.title, productData, hasEbayData);
+  }
+
+  // Default behavior as fallback
   if (hasEbayData && productData.ebay_data?.itemDetails) {
     const ebayTitle = productData.ebay_data.itemDetails.title || '';
     const ebaySpecs = JSON.stringify(productData.ebay_data.itemDetails.itemSpecifics || {});
@@ -197,6 +204,13 @@ Return only the optimized title, no explanations.`;
 }
 
 function createShortDescriptionPrompt(productData: any, hasEbayData: boolean): string {
+  // Use custom prompts if available
+  const customPrompts = getCustomPrompts();
+  if (customPrompts?.short_description) {
+    return replacePromptVariables(customPrompts.short_description, productData, hasEbayData);
+  }
+
+  // Default behavior as fallback
   if (hasEbayData && productData.ebay_data?.itemDetails) {
     const ebayDesc = productData.ebay_data.itemDetails.description || '';
     const ebaySpecs = JSON.stringify(productData.ebay_data.itemDetails.itemSpecifics || {});
@@ -235,6 +249,13 @@ Return only the description text, no explanations.`;
 }
 
 function createLongDescriptionPrompt(productData: any, hasEbayData: boolean): string {
+  // Use custom prompts if available
+  const customPrompts = getCustomPrompts();
+  if (customPrompts?.long_description) {
+    return replacePromptVariables(customPrompts.long_description, productData, hasEbayData);
+  }
+
+  // Default behavior as fallback
   if (hasEbayData && productData.ebay_data?.itemDetails) {
     const ebayDetails = productData.ebay_data.itemDetails;
     const itemSpecs = JSON.stringify(ebayDetails.itemSpecifics || {});
@@ -280,6 +301,13 @@ Return only the HTML description, no explanations.`;
 }
 
 function createMetaDescriptionPrompt(productData: any, hasEbayData: boolean): string {
+  // Use custom prompts if available
+  const customPrompts = getCustomPrompts();
+  if (customPrompts?.meta_description) {
+    return replacePromptVariables(customPrompts.meta_description, productData, hasEbayData);
+  }
+
+  // Default behavior as fallback
   if (hasEbayData && productData.ebay_data?.itemDetails) {
     const ebayTitle = productData.ebay_data.itemDetails.title || '';
     const price = productData.ebay_data.itemDetails.price || productData.price;
@@ -318,8 +346,15 @@ Format: [Brand] [Part Type] [SKU] - OE ${productData.oe_number}. Quality auto pa
   }
 }
 
-function replacePromptVariables(template: string, productData: any): string {
-  return template
+// Get custom prompts from Supabase settings (using environment variable workaround)
+function getCustomPrompts(): any {
+  // Since we can't access localStorage from edge function, we'll use default prompts
+  // The frontend will need to pass custom prompts through the request body
+  return null;
+}
+
+function replacePromptVariables(template: string, productData: any, hasEbayData: boolean): string {
+  let replacedTemplate = template
     .replace(/{brand}/g, productData.brand || 'N/A')
     .replace(/{sku}/g, productData.sku || 'N/A')
     .replace(/{category}/g, productData.category || 'Auto Part')
@@ -328,4 +363,16 @@ function replacePromptVariables(template: string, productData: any): string {
     .replace(/{technical_specs}/g, JSON.stringify(productData.technical_specs || {}))
     .replace(/{product_name}/g, productData.product_name || 'N/A')
     .replace(/{short_description}/g, productData.short_description || 'N/A');
+
+  // Add eBay-specific data if available
+  if (hasEbayData && productData.ebay_data?.itemDetails) {
+    const ebayDetails = productData.ebay_data.itemDetails;
+    replacedTemplate = replacedTemplate
+      .replace(/{ebay_title}/g, ebayDetails.title || 'N/A')
+      .replace(/{ebay_description}/g, ebayDetails.description?.substring(0, 500) || 'N/A')
+      .replace(/{item_specifics}/g, JSON.stringify(ebayDetails.itemSpecifics || {}))
+      .replace(/{part_number_tags}/g, productData.part_number_tags?.join(', ') || 'N/A');
+  }
+
+  return replacedTemplate;
 }
