@@ -90,6 +90,9 @@ const ExportManager = () => {
   const generateWooCommerceCSV = () => {
     const selectedProductData = readyProducts.filter(p => selectedProducts.includes(p.id));
     
+    // Extract all unique ItemSpecific keys from all selected products
+    const allItemSpecificKeys = extractItemSpecificsKeys(selectedProductData);
+    
     const baseHeaders = [
       'Type',
       'SKU',
@@ -146,6 +149,10 @@ const ExportManager = () => {
       'Meta: oem_numbers',
       'Meta: technical_specs'
     ];
+    
+    // Add all ItemSpecific columns dynamically
+    const itemSpecificHeaders = Array.from(allItemSpecificKeys).map(key => `ItemSpec: ${key}`);
+    const allHeaders = [...baseHeaders, ...itemSpecificHeaders];
 
     const rows = selectedProductData.map(product => {
       // Extract data from technical_specs and raw_scraped_data
@@ -247,7 +254,7 @@ const ExportManager = () => {
         '', // External URL
         '', // Button text
         '0', // Position
-        `="${eanNumber}"`, // EAN Number - preserve leading zeros
+        eanNumber ? `="${eanNumber}"` : '', // EAN Number - preserve leading zeros
         packingLength, // Packing Length (cm)
         packingWidth, // Packing Width (cm)
         packingHeight, // Packing Height (cm)
@@ -266,11 +273,21 @@ const ExportManager = () => {
         includeSpecs ? JSON.stringify(Object.assign({}, product.technical_specs || {}, product.raw_scraped_data || {})) : '' // Meta: technical_specs
       ];
       
-      return baseRowData;
+      // Add all ItemSpecific values dynamically
+      const itemSpecificValues = Array.from(allItemSpecificKeys).map(key => {
+        const value = getItemSpecificValue(itemSpecifics, key);
+        // Preserve leading zeros for numeric values that might start with zero
+        if (value && /^\d+/.test(value.trim())) {
+          return `="${value.trim()}"`;
+        }
+        return value || '';
+      });
+      
+      return [...baseRowData, ...itemSpecificValues];
     });
 
     // Fix: Preserve leading zeros by using proper CSV formatting
-    const csvContent = [baseHeaders, ...rows]
+    const csvContent = [allHeaders, ...rows]
       .map(row => row.map(field => {
         const fieldStr = String(field);
         // For fields that start with ="...", keep them as is to preserve Excel formatting
