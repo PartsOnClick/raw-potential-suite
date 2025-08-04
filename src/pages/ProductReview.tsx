@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Search, Edit, Eye, Download, Filter, Info, RefreshCw, Settings } from "lucide-react";
+import { Search, Edit, Eye, Download, Filter, Info, RefreshCw } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -18,8 +18,6 @@ const ProductReview = () => {
   const [loading, setLoading] = useState(true);
   const [regenerating, setRegenerating] = useState<string>("");
   const [showRawData, setShowRawData] = useState(false);
-  const [editingPrompt, setEditingPrompt] = useState<string>("");
-  const [customPrompt, setCustomPrompt] = useState<string>("");
   const { toast } = useToast();
 
   useEffect(() => {
@@ -116,10 +114,6 @@ const ProductReview = () => {
         }
       };
 
-      // Add custom prompt if editing
-      if (editingPrompt === contentType && customPrompt.trim()) {
-        payload.customPrompt = customPrompt;
-      }
 
       const { data, error } = await supabase.functions.invoke('deepseek-content-generator', {
         body: payload
@@ -153,8 +147,6 @@ const ProductReview = () => {
       });
     } finally {
       setRegenerating("");
-      setEditingPrompt("");
-      setCustomPrompt("");
     }
   };
 
@@ -385,42 +377,20 @@ const ProductReview = () => {
                     <div>
                       <div className="flex items-center justify-between mb-2">
                         <Label>Product Title</Label>
-                        <div className="flex gap-2">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setEditingPrompt(editingPrompt === 'title' ? '' : 'title')}
-                          >
-                            <Settings className="w-4 h-4 mr-2" />
-                            {editingPrompt === 'title' ? 'Cancel' : 'Edit Prompt'}
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleRegenerateContent(selectedProduct.id, 'title')}
-                            disabled={regenerating === 'title'}
-                          >
-                            {regenerating === 'title' ? (
-                              <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-                            ) : (
-                              <RefreshCw className="w-4 h-4 mr-2" />
-                            )}
-                            Regenerate
-                          </Button>
-                        </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleRegenerateContent(selectedProduct.id, 'title')}
+                          disabled={regenerating === 'title'}
+                        >
+                          {regenerating === 'title' ? (
+                            <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                          ) : (
+                            <RefreshCw className="w-4 h-4 mr-2" />
+                          )}
+                          Regenerate
+                        </Button>
                       </div>
-                      {editingPrompt === 'title' && (
-                        <div className="mb-3">
-                          <Label className="text-sm">Custom Prompt (optional)</Label>
-                          <Textarea
-                            value={customPrompt}
-                            onChange={(e) => setCustomPrompt(e.target.value)}
-                            placeholder="Enter custom instructions for title generation..."
-                            rows={2}
-                            className="mt-1"
-                          />
-                        </div>
-                      )}
                       <Input
                         value={selectedProduct.product_name || ''}
                         onChange={(e) => setSelectedProduct({...selectedProduct, product_name: e.target.value})}
@@ -432,42 +402,20 @@ const ProductReview = () => {
                     <div>
                       <div className="flex items-center justify-between mb-2">
                         <Label>Short Description</Label>
-                        <div className="flex gap-2">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setEditingPrompt(editingPrompt === 'short_description' ? '' : 'short_description')}
-                          >
-                            <Settings className="w-4 h-4 mr-2" />
-                            {editingPrompt === 'short_description' ? 'Cancel' : 'Edit Prompt'}
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleRegenerateContent(selectedProduct.id, 'short_description')}
-                            disabled={regenerating === 'short_description'}
-                          >
-                            {regenerating === 'short_description' ? (
-                              <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-                            ) : (
-                              <RefreshCw className="w-4 h-4 mr-2" />
-                            )}
-                            Regenerate
-                          </Button>
-                        </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleRegenerateContent(selectedProduct.id, 'short_description')}
+                          disabled={regenerating === 'short_description'}
+                        >
+                          {regenerating === 'short_description' ? (
+                            <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                          ) : (
+                            <RefreshCw className="w-4 h-4 mr-2" />
+                          )}
+                          Regenerate
+                        </Button>
                       </div>
-                      {editingPrompt === 'short_description' && (
-                        <div className="mb-3">
-                          <Label className="text-sm">Custom Prompt (optional)</Label>
-                          <Textarea
-                            value={customPrompt}
-                            onChange={(e) => setCustomPrompt(e.target.value)}
-                            placeholder="Enter custom instructions for short description generation..."
-                            rows={2}
-                            className="mt-1"
-                          />
-                        </div>
-                      )}
                       <Textarea
                         value={selectedProduct.short_description || ''}
                         onChange={(e) => setSelectedProduct({...selectedProduct, short_description: e.target.value})}
@@ -480,42 +428,20 @@ const ProductReview = () => {
                     <div>
                       <div className="flex items-center justify-between mb-2">
                         <Label>Long Description</Label>
-                        <div className="flex gap-2">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setEditingPrompt(editingPrompt === 'long_description' ? '' : 'long_description')}
-                          >
-                            <Settings className="w-4 h-4 mr-2" />
-                            {editingPrompt === 'long_description' ? 'Cancel' : 'Edit Prompt'}
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleRegenerateContent(selectedProduct.id, 'long_description')}
-                            disabled={regenerating === 'long_description'}
-                          >
-                            {regenerating === 'long_description' ? (
-                              <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-                            ) : (
-                              <RefreshCw className="w-4 h-4 mr-2" />
-                            )}
-                            Regenerate
-                          </Button>
-                        </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleRegenerateContent(selectedProduct.id, 'long_description')}
+                          disabled={regenerating === 'long_description'}
+                        >
+                          {regenerating === 'long_description' ? (
+                            <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                          ) : (
+                            <RefreshCw className="w-4 h-4 mr-2" />
+                          )}
+                          Regenerate
+                        </Button>
                       </div>
-                      {editingPrompt === 'long_description' && (
-                        <div className="mb-3">
-                          <Label className="text-sm">Custom Prompt (optional)</Label>
-                          <Textarea
-                            value={customPrompt}
-                            onChange={(e) => setCustomPrompt(e.target.value)}
-                            placeholder="Enter custom instructions for long description generation..."
-                            rows={2}
-                            className="mt-1"
-                          />
-                        </div>
-                      )}
                       <Textarea
                         value={selectedProduct.long_description || ''}
                         onChange={(e) => setSelectedProduct({...selectedProduct, long_description: e.target.value})}
