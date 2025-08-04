@@ -258,9 +258,9 @@ const ProductReview = () => {
                                title={`AI Content: ${product.ai_content_status}`} />
                         </div>
                       </div>
-                      <p className="text-sm text-muted-foreground line-clamp-2">
-                        {product.product_name || 'No title generated'}
-                      </p>
+                       <p className="text-sm text-muted-foreground line-clamp-2">
+                         {product.seo_title || product.original_title || 'No title generated'}
+                       </p>
                       {product.price && (
                         <p className="text-sm font-medium mt-1">£{product.price}</p>
                       )}
@@ -392,8 +392,8 @@ const ProductReview = () => {
                         </Button>
                       </div>
                       <Input
-                        value={selectedProduct.product_name || ''}
-                        onChange={(e) => setSelectedProduct({...selectedProduct, product_name: e.target.value})}
+                        value={selectedProduct.seo_title || selectedProduct.original_title || selectedProduct.product_name || ''}
+                        onChange={(e) => setSelectedProduct({...selectedProduct, seo_title: e.target.value})}
                         disabled={!isEditing}
                         placeholder="AI-generated product title will appear here..."
                       />
