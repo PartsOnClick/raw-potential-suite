@@ -96,16 +96,18 @@ serve(async (req) => {
       updated_at: new Date().toISOString(),
     };
     
-    // Map content types to correct column names
-    if (contentType === 'seo_title') {
-      updateData.seo_title = generatedContent;
-    } else if (contentType === 'short_description') {
-      updateData.short_description = generatedContent;
-    } else if (contentType === 'long_description') {
-      updateData.long_description = generatedContent;
-    } else if (contentType === 'meta_description') {
-      updateData.meta_description = generatedContent;
-    }
+      // Map content types to correct column names
+      if (contentType === 'seo_title') {
+        updateData.seo_title = generatedContent;
+      } else if (contentType === 'short_description') {
+        updateData.short_description = generatedContent;
+      } else if (contentType === 'long_description') {
+        updateData.long_description = generatedContent;
+      } else if (contentType === 'meta_description') {
+        updateData.meta_description = generatedContent;
+      }
+
+      console.log('Updating product with generated content:', updateData);
 
     const { error: updateError } = await supabase
       .from('products')

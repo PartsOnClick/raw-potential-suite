@@ -128,7 +128,7 @@ const ProductReview = () => {
           oem_numbers: product.oem_numbers || [],
           images: product.images || []
         },
-        hasEbayData: !!(product.raw_scraped_data?.ebay_data)
+        hasEbayData: !!(product.ebay_data && Object.keys(product.ebay_data).length > 0)
       };
 
 
