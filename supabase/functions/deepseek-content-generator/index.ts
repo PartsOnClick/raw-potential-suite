@@ -158,9 +158,12 @@ serve(async (req) => {
 function createSeoTitlePrompt(productData: any, hasEbayData: boolean, customPrompts?: any): string {
   // Use custom prompts if available
   if (customPrompts?.title) {
+    console.log('Using custom title prompt:', customPrompts.title);
     return replacePromptVariables(customPrompts.title, productData, hasEbayData);
   }
 
+  console.log('Using default title prompt - no custom prompt found');
+  
   // Default behavior as fallback
   if (hasEbayData && productData.ebay_data?.itemDetails) {
     const ebayTitle = productData.ebay_data.itemDetails.title || '';
