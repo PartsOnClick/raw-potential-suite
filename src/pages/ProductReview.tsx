@@ -101,17 +101,34 @@ const ProductReview = () => {
       const product = products.find(p => p.id === productId);
       if (!product) throw new Error('Product not found');
 
+      // Get custom prompts from localStorage
+      const savedPrompts = localStorage.getItem('deepseek_prompts');
+      let customPrompts = null;
+      if (savedPrompts) {
+        try {
+          customPrompts = JSON.parse(savedPrompts);
+        } catch (error) {
+          console.warn('Failed to parse custom prompts:', error);
+        }
+      }
+
       const payload: any = {
         productId,
         contentType,
+        customPrompts,
         productData: {
           brand: product.brand,
           sku: product.sku,
           category: product.category,
-          technicalSpecs: product.technical_specs || {},
-          oemNumbers: product.oem_numbers || [],
+          price: product.price,
+          product_name: product.product_name,
+          original_title: product.original_title,
+          short_description: product.short_description,
+          technical_specs: product.technical_specs || {},
+          oem_numbers: product.oem_numbers || [],
           images: product.images || []
-        }
+        },
+        hasEbayData: !!(product.raw_scraped_data?.ebay_data)
       };
 
 
@@ -380,10 +397,10 @@ const ProductReview = () => {
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => handleRegenerateContent(selectedProduct.id, 'title')}
-                          disabled={regenerating === 'title'}
+                          onClick={() => handleRegenerateContent(selectedProduct.id, 'seo_title')}
+                          disabled={regenerating === 'seo_title'}
                         >
-                          {regenerating === 'title' ? (
+                          {regenerating === 'seo_title' ? (
                             <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
                           ) : (
                             <RefreshCw className="w-4 h-4 mr-2" />

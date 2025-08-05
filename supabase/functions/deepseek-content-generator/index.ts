@@ -18,7 +18,7 @@ serve(async (req) => {
   }
 
   try {
-    const { productId, contentType, productData, hasEbayData } = await req.json();
+    const { productId, contentType, productData, hasEbayData, customPrompts } = await req.json();
     
     console.log(`Generating ${contentType} for product ${productId}`);
     
@@ -28,16 +28,16 @@ serve(async (req) => {
     
     switch (contentType) {
       case 'seo_title':
-        prompt = createSeoTitlePrompt(productData, hasEbayData);
+        prompt = createSeoTitlePrompt(productData, hasEbayData, customPrompts);
         break;
       case 'short_description':
-        prompt = createShortDescriptionPrompt(productData, hasEbayData);
+        prompt = createShortDescriptionPrompt(productData, hasEbayData, customPrompts);
         break;
       case 'long_description':
-        prompt = createLongDescriptionPrompt(productData, hasEbayData);
+        prompt = createLongDescriptionPrompt(productData, hasEbayData, customPrompts);
         break;
       case 'meta_description':
-        prompt = createMetaDescriptionPrompt(productData, hasEbayData);
+        prompt = createMetaDescriptionPrompt(productData, hasEbayData, customPrompts);
         break;
       default:
         throw new Error(`Unknown content type: ${contentType}`);
@@ -155,9 +155,8 @@ serve(async (req) => {
   }
 });
 
-function createSeoTitlePrompt(productData: any, hasEbayData: boolean): string {
+function createSeoTitlePrompt(productData: any, hasEbayData: boolean, customPrompts?: any): string {
   // Use custom prompts if available
-  const customPrompts = getCustomPrompts();
   if (customPrompts?.title) {
     return replacePromptVariables(customPrompts.title, productData, hasEbayData);
   }
@@ -203,9 +202,8 @@ Return only the optimized title, no explanations.`;
   }
 }
 
-function createShortDescriptionPrompt(productData: any, hasEbayData: boolean): string {
+function createShortDescriptionPrompt(productData: any, hasEbayData: boolean, customPrompts?: any): string {
   // Use custom prompts if available
-  const customPrompts = getCustomPrompts();
   if (customPrompts?.short_description) {
     return replacePromptVariables(customPrompts.short_description, productData, hasEbayData);
   }
@@ -248,9 +246,8 @@ Return only the description text, no explanations.`;
   }
 }
 
-function createLongDescriptionPrompt(productData: any, hasEbayData: boolean): string {
+function createLongDescriptionPrompt(productData: any, hasEbayData: boolean, customPrompts?: any): string {
   // Use custom prompts if available
-  const customPrompts = getCustomPrompts();
   if (customPrompts?.long_description) {
     return replacePromptVariables(customPrompts.long_description, productData, hasEbayData);
   }
@@ -300,9 +297,8 @@ Return only the HTML description, no explanations.`;
   }
 }
 
-function createMetaDescriptionPrompt(productData: any, hasEbayData: boolean): string {
+function createMetaDescriptionPrompt(productData: any, hasEbayData: boolean, customPrompts?: any): string {
   // Use custom prompts if available
-  const customPrompts = getCustomPrompts();
   if (customPrompts?.meta_description) {
     return replacePromptVariables(customPrompts.meta_description, productData, hasEbayData);
   }
