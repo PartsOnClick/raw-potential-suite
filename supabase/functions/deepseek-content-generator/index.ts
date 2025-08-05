@@ -21,6 +21,7 @@ serve(async (req) => {
     const { productId, contentType, productData, hasEbayData, customPrompts } = await req.json();
     
     console.log(`Generating ${contentType} for product ${productId}`);
+    console.log('Received customPrompts:', JSON.stringify(customPrompts, null, 2));
     
     // Generate content based on type
     let generatedContent = '';
@@ -156,13 +157,15 @@ serve(async (req) => {
 });
 
 function createSeoTitlePrompt(productData: any, hasEbayData: boolean, customPrompts?: any): string {
+  console.log('createSeoTitlePrompt called with customPrompts:', JSON.stringify(customPrompts, null, 2));
+  
   // Use custom prompts if available
   if (customPrompts?.title) {
     console.log('Using custom title prompt:', customPrompts.title);
     return replacePromptVariables(customPrompts.title, productData, hasEbayData);
   }
 
-  console.log('Using default title prompt - no custom prompt found');
+  console.log('Using default title prompt - no custom prompt found - customPrompts:', customPrompts);
   
   // Default behavior as fallback
   if (hasEbayData && productData.ebay_data?.itemDetails) {
