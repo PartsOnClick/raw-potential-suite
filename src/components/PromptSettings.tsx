@@ -284,10 +284,13 @@ const PromptSettings = () => {
 
         <div className="mt-6 p-4 bg-muted/50 rounded-lg">
           <h4 className="font-medium mb-2">Available Variables</h4>
-          <p className="text-sm text-muted-foreground">
-            You can use these variables in your prompts: <code>{"{brand}"}</code>, <code>{"{sku}"}</code>, <code>{"{category}"}</code>, 
+          <p className="text-sm text-muted-foreground mb-2">
+            <strong>Product Data:</strong> <code>{"{brand}"}</code>, <code>{"{sku}"}</code>, <code>{"{category}"}</code>, 
             <code>{"{price}"}</code>, <code>{"{oem_numbers}"}</code>, <code>{"{technical_specs}"}</code>, 
             <code>{"{product_name}"}</code>, <code>{"{short_description}"}</code>
+          </p>
+          <p className="text-sm text-muted-foreground">
+            <strong>Original CSV Data:</strong> <code>{"{csv_brand}"}</code>, <code>{"{csv_sku}"}</code>, <code>{"{csv_oe_number}"}</code>, <code>{"{csv_title}"}</code>
           </p>
         </div>
       </CardContent>

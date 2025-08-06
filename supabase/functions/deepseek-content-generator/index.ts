@@ -27,18 +27,19 @@ serve(async (req) => {
     let generatedContent = '';
     let prompt = '';
     
+    // Create prompt based on content type
     switch (contentType) {
       case 'seo_title':
-        prompt = createSeoTitlePrompt(productData, hasEbayData, customPrompts);
+        prompt = await createSeoTitlePrompt(productData, hasEbayData, customPrompts, supabase);
         break;
       case 'short_description':
-        prompt = createShortDescriptionPrompt(productData, hasEbayData, customPrompts);
+        prompt = await createShortDescriptionPrompt(productData, hasEbayData, customPrompts, supabase);
         break;
       case 'long_description':
-        prompt = createLongDescriptionPrompt(productData, hasEbayData, customPrompts);
+        prompt = await createLongDescriptionPrompt(productData, hasEbayData, customPrompts, supabase);
         break;
       case 'meta_description':
-        prompt = createMetaDescriptionPrompt(productData, hasEbayData, customPrompts);
+        prompt = await createMetaDescriptionPrompt(productData, hasEbayData, customPrompts, supabase);
         break;
       default:
         throw new Error(`Unknown content type: ${contentType}`);
@@ -158,13 +159,16 @@ serve(async (req) => {
   }
 });
 
-function createSeoTitlePrompt(productData: any, hasEbayData: boolean, customPrompts?: any): string {
-  console.log('createSeoTitlePrompt called with customPrompts:', JSON.stringify(customPrompts, null, 2));
+async function createSeoTitlePrompt(productData: any, hasEbayData: boolean, customPrompts?: any, supabase?: any): Promise<string> {
+  console.log('Creating SEO title prompt with data:', { 
+    productData: { brand: productData.brand, sku: productData.sku },
+    hasEbayData,
+    hasCustomPrompts: !!customPrompts?.title
+  });
   
-  // Use custom prompts if available
   if (customPrompts?.title) {
-    console.log('Using custom title prompt:', customPrompts.title);
-    return replacePromptVariables(customPrompts.title, productData, hasEbayData);
+    console.log('Using custom SEO title prompt');
+    return await replacePromptVariables(customPrompts.title, productData, hasEbayData, supabase);
   }
 
   console.log('Using default title prompt - no custom prompt found - customPrompts:', customPrompts);
@@ -210,10 +214,16 @@ Return only the optimized title, no explanations.`;
   }
 }
 
-function createShortDescriptionPrompt(productData: any, hasEbayData: boolean, customPrompts?: any): string {
-  // Use custom prompts if available
+async function createShortDescriptionPrompt(productData: any, hasEbayData: boolean, customPrompts?: any, supabase?: any): Promise<string> {
+  console.log('Creating short description prompt with data:', { 
+    productData: { brand: productData.brand, sku: productData.sku },
+    hasEbayData,
+    hasCustomPrompts: !!customPrompts?.short_description
+  });
+  
   if (customPrompts?.short_description) {
-    return replacePromptVariables(customPrompts.short_description, productData, hasEbayData);
+    console.log('Using custom short description prompt');
+    return await replacePromptVariables(customPrompts.short_description, productData, hasEbayData, supabase);
   }
 
   // Default behavior as fallback
@@ -254,10 +264,16 @@ Return only the description text, no explanations.`;
   }
 }
 
-function createLongDescriptionPrompt(productData: any, hasEbayData: boolean, customPrompts?: any): string {
-  // Use custom prompts if available
+async function createLongDescriptionPrompt(productData: any, hasEbayData: boolean, customPrompts?: any, supabase?: any): Promise<string> {
+  console.log('Creating long description prompt with data:', { 
+    productData: { brand: productData.brand, sku: productData.sku },
+    hasEbayData,
+    hasCustomPrompts: !!customPrompts?.long_description
+  });
+  
   if (customPrompts?.long_description) {
-    return replacePromptVariables(customPrompts.long_description, productData, hasEbayData);
+    console.log('Using custom long description prompt');
+    return await replacePromptVariables(customPrompts.long_description, productData, hasEbayData, supabase);
   }
 
   // Default behavior as fallback
@@ -305,10 +321,16 @@ Return only the HTML description, no explanations.`;
   }
 }
 
-function createMetaDescriptionPrompt(productData: any, hasEbayData: boolean, customPrompts?: any): string {
-  // Use custom prompts if available
+async function createMetaDescriptionPrompt(productData: any, hasEbayData: boolean, customPrompts?: any, supabase?: any): Promise<string> {
+  console.log('Creating meta description prompt with data:', { 
+    productData: { brand: productData.brand, sku: productData.sku },
+    hasEbayData,
+    hasCustomPrompts: !!customPrompts?.meta_description
+  });
+  
   if (customPrompts?.meta_description) {
-    return replacePromptVariables(customPrompts.meta_description, productData, hasEbayData);
+    console.log('Using custom meta description prompt');
+    return await replacePromptVariables(customPrompts.meta_description, productData, hasEbayData, supabase);
   }
 
   // Default behavior as fallback
@@ -357,7 +379,27 @@ function getCustomPrompts(): any {
   return null;
 }
 
-function replacePromptVariables(template: string, productData: any, hasEbayData: boolean): string {
+async function replacePromptVariables(template: string, productData: any, hasEbayData: boolean, supabase: any): Promise<string> {
+  // Get original CSV data if available
+  let csvData = null;
+  if (productData.batch_id) {
+    try {
+      const { data: batchData } = await supabase
+        .from('import_batches')
+        .select('csv_data')
+        .eq('id', productData.batch_id)
+        .single();
+      
+      if (batchData?.csv_data) {
+        // Find the CSV row that matches this product's SKU
+        const csvRows = Array.isArray(batchData.csv_data) ? batchData.csv_data : [];
+        csvData = csvRows.find((row: any) => row.sku === productData.sku);
+      }
+    } catch (error) {
+      console.log('Could not fetch CSV data:', error);
+    }
+  }
+
   let replacedTemplate = template
     .replace(/{brand}/g, productData.brand || 'N/A')
     .replace(/{sku}/g, productData.sku || 'N/A')
@@ -366,7 +408,12 @@ function replacePromptVariables(template: string, productData: any, hasEbayData:
     .replace(/{oem_numbers}/g, productData.oem_numbers?.join(', ') || 'N/A')
     .replace(/{technical_specs}/g, JSON.stringify(productData.technical_specs || {}))
     .replace(/{product_name}/g, productData.product_name || 'N/A')
-    .replace(/{short_description}/g, productData.short_description || 'N/A');
+    .replace(/{short_description}/g, productData.short_description || 'N/A')
+    // Add original CSV data variables
+    .replace(/{csv_brand}/g, csvData?.brand || 'N/A')
+    .replace(/{csv_sku}/g, csvData?.sku || 'N/A')
+    .replace(/{csv_oe_number}/g, csvData?.oe_number || 'N/A')
+    .replace(/{csv_title}/g, csvData?.title || 'N/A');
 
   // Add eBay-specific data if available
   if (hasEbayData && productData.ebay_data?.itemDetails) {
