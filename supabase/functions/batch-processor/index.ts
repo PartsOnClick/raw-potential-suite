@@ -122,9 +122,32 @@ serve(async (req) => {
 
             // Step 2: Generate AI content
             console.log(`[Batch] Starting AI content generation for ${product.brand} ${product.sku}`);
+            
+            // Fetch custom prompts from a settings table or use defaults
+            // Since localStorage isn't available in edge functions, we'll need to store prompts in database
+            // For now, we'll use the same approach as the frontend - check if there are custom prompts
+            let customPrompts = null;
+            try {
+              // Try to get custom prompts from a settings table (we'll need to create this)
+              const { data: promptSettings } = await supabaseAdmin
+                .from('prompt_settings')
+                .select('prompts')
+                .limit(1)
+                .single();
+              
+              if (promptSettings?.prompts) {
+                customPrompts = promptSettings.prompts;
+                console.log(`[Batch] Using custom prompts from database`);
+              }
+            } catch (error) {
+              console.log(`[Batch] No custom prompts found in database, using defaults`);
+            }
+            
             const contentTypes = ['seo_title', 'short_description', 'long_description', 'meta_description'];
             
             for (const contentType of contentTypes) {
+              const hasEbayData = !!(updatedProduct?.ebay_data && Object.keys(updatedProduct.ebay_data).length > 0);
+              
               const { error: contentError } = await supabaseAdmin.functions.invoke(
                 'deepseek-content-generator',
                 { 
@@ -132,6 +155,8 @@ serve(async (req) => {
                     productId: product.id,
                     contentType: contentType,
                     productData: updatedProduct || product,
+                    hasEbayData: hasEbayData,
+                    customPrompts: customPrompts
                   }
                 }
               );
