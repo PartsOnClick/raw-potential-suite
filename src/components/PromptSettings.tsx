@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { Save, RotateCcw } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
 
 interface PromptTemplate {
   title: string;
@@ -93,15 +94,30 @@ const PromptSettings = () => {
   const { toast } = useToast();
 
   useEffect(() => {
-    // Load saved prompts from localStorage
-    const savedPrompts = localStorage.getItem('deepseek_prompts');
-    if (savedPrompts) {
+    // Load saved prompts from Supabase database
+    const loadPrompts = async () => {
       try {
-        setPrompts(JSON.parse(savedPrompts));
+        const { data, error } = await supabase
+          .from('prompt_settings')
+          .select('prompts')
+          .limit(1)
+          .single();
+        
+        if (error) {
+          console.log('No saved prompts found, using defaults');
+          return;
+        }
+        
+        if (data?.prompts && typeof data.prompts === 'object' && data.prompts !== null) {
+          const loadedPrompts = data.prompts as Record<string, string>;
+          setPrompts({ ...defaultPrompts, ...loadedPrompts });
+        }
       } catch (error) {
         console.error('Error loading saved prompts:', error);
       }
-    }
+    };
+    
+    loadPrompts();
   }, []);
 
   const handlePromptChange = (type: keyof PromptTemplate, value: string) => {
@@ -112,13 +128,52 @@ const PromptSettings = () => {
     setIsModified(true);
   };
 
-  const savePrompts = () => {
-    localStorage.setItem('deepseek_prompts', JSON.stringify(prompts));
-    setIsModified(false);
-    toast({
-      title: "Prompts saved",
-      description: "Your custom prompts have been saved and will be used for all future processing.",
-    });
+  const savePrompts = async () => {
+    try {
+      // First try to update existing record
+      const { data: existingData, error: fetchError } = await supabase
+        .from('prompt_settings')
+        .select('id')
+        .limit(1)
+        .single();
+      
+      if (fetchError && fetchError.code !== 'PGRST116') {
+        throw fetchError;
+      }
+      
+      if (existingData) {
+        // Update existing record
+        const { error: updateError } = await supabase
+          .from('prompt_settings')
+          .update({ 
+            prompts: prompts as any,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', existingData.id);
+        
+        if (updateError) throw updateError;
+      } else {
+        // Insert new record
+        const { error: insertError } = await supabase
+          .from('prompt_settings')
+          .insert({ prompts: prompts as any });
+        
+        if (insertError) throw insertError;
+      }
+      
+      setIsModified(false);
+      toast({
+        title: "Prompts saved",
+        description: "Your custom prompts have been saved and will be used for all future processing.",
+      });
+    } catch (error) {
+      console.error('Error saving prompts:', error);
+      toast({
+        title: "Error saving prompts",
+        description: "Failed to save your custom prompts. Please try again.",
+        variant: "destructive",
+      });
+    }
   };
 
   const resetToDefaults = () => {
