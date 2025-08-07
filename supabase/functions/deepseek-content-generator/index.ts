@@ -418,11 +418,26 @@ async function replacePromptVariables(template: string, productData: any, hasEba
   // Add eBay-specific data if available
   if (hasEbayData && productData.ebay_data?.itemDetails) {
     const ebayDetails = productData.ebay_data.itemDetails;
+    const itemSpecs = ebayDetails.itemSpecifics || {};
+    
     replacedTemplate = replacedTemplate
       .replace(/{ebay_title}/g, ebayDetails.title || 'N/A')
       .replace(/{ebay_description}/g, ebayDetails.description?.substring(0, 500) || 'N/A')
-      .replace(/{item_specifics}/g, JSON.stringify(ebayDetails.itemSpecifics || {}))
-      .replace(/{part_number_tags}/g, productData.part_number_tags?.join(', ') || 'N/A');
+      .replace(/{item_specifics}/g, JSON.stringify(itemSpecs))
+      .replace(/{part_number_tags}/g, productData.part_number_tags?.join(', ') || 'N/A')
+      // Extract specific eBay item specifics
+      .replace(/{ebay_type}/g, itemSpecs['<Name>Type'] || 'N/A')
+      .replace(/{ebay_make}/g, itemSpecs['<Name>Make'] || 'N/A')
+      .replace(/{ebay_model}/g, itemSpecs['<Name>Model'] || 'N/A')
+      .replace(/{ebay_engine}/g, itemSpecs['<Name>Engine'] || 'N/A')
+      .replace(/{ebay_year}/g, itemSpecs['<Name>Year'] || 'N/A')
+      .replace(/{ebay_oem_numbers}/g, 
+        [itemSpecs['<Name>OE/OEM Part Number'], itemSpecs['<Name>Other Part Number'], itemSpecs['<Name>Manufacturer Part Number']].filter(Boolean).join(', ') || 'N/A')
+      .replace(/{ebay_fitment_type}/g, itemSpecs['<Name>Fitment Type'] || 'N/A')
+      .replace(/{ebay_features}/g, itemSpecs['<Name>Features'] || 'N/A')
+      .replace(/{ebay_finish}/g, itemSpecs['<Name>Finish'] || 'N/A')
+      .replace(/{ebay_condition}/g, ebayDetails.condition || 'N/A')
+      .replace(/{ebay_price}/g, ebayDetails.price ? '£' + ebayDetails.price : 'N/A');
   }
 
   return replacedTemplate;

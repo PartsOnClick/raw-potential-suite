@@ -289,8 +289,14 @@ const PromptSettings = () => {
             <code>{"{price}"}</code>, <code>{"{oem_numbers}"}</code>, <code>{"{technical_specs}"}</code>, 
             <code>{"{product_name}"}</code>, <code>{"{short_description}"}</code>
           </p>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-muted-foreground mb-2">
             <strong>Original CSV Data:</strong> <code>{"{csv_brand}"}</code>, <code>{"{csv_sku}"}</code>, <code>{"{csv_oe_number}"}</code>, <code>{"{csv_title}"}</code>
+          </p>
+          <p className="text-sm text-muted-foreground">
+            <strong>eBay Data:</strong> <code>{"{ebay_title}"}</code>, <code>{"{ebay_type}"}</code>, <code>{"{ebay_make}"}</code>, 
+            <code>{"{ebay_model}"}</code>, <code>{"{ebay_engine}"}</code>, <code>{"{ebay_year}"}</code>, <code>{"{ebay_oem_numbers}"}</code>, 
+            <code>{"{ebay_fitment_type}"}</code>, <code>{"{ebay_features}"}</code>, <code>{"{ebay_finish}"}</code>, 
+            <code>{"{ebay_condition}"}</code>, <code>{"{ebay_price}"}</code>, <code>{"{item_specifics}"}</code>
           </p>
         </div>
       </CardContent>
