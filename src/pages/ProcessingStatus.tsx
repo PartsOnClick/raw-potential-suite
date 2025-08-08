@@ -109,7 +109,7 @@ const ProcessingStatus = () => {
 
   const handleRetryBatch = async (batchId: string) => {
     try {
-      const response = await supabase.functions.invoke('batch-processor', {
+      const response = await supabase.functions.invoke('restart-batch', {
         body: { batchId }
       });
 
